@@ -75,8 +75,9 @@ the `•` it replaced.
 
 ### 1.1 The pulse
 
-The token count breathes a coloured background — dark → full hue → dark over a
-**6-second cycle**, one frame per render — in three cases, in priority order:
+The token count breathes a coloured background — **black** → full hue → black
+over a **6-second cycle**, one frame per render — in three cases, in priority
+order:
 
 | Trigger | Colour |
 |---------|--------|
@@ -94,11 +95,19 @@ is coming.
 
 Two deliberate choices:
 
-- **Slow.** A fast blink is an alarm, and an alarm in a bar you stare at all day
-  is something you learn to tune out within a day. Something that *breathes* at
-  the edge of vision keeps registering as movement without seizing the focus a
-  strobe demands. Six steps means no frame is far from its neighbour, so it
-  reads as a fade rather than a flicker.
+- **Slow, and 1 fps is the whole budget.** A fast blink is an alarm, and an alarm
+  in a bar you stare at all day is something you learn to tune out within a day.
+  Something that *breathes* at the edge of vision keeps registering as movement
+  without seizing the focus a strobe demands — and movement registers at one
+  frame per second as well as at ten, so the render interval is the frame rate
+  and nothing is spent chasing smoothness. Six steps means no frame is far from
+  its neighbour, so it reads as a fade rather than a flicker.
+- **One hue, from black.** Both ramps start at 16 (true black) and stay on a
+  single hue: `16 52 88 124 88 52` for red, `16 94 130 166 130 94` for amber.
+  The earlier ramps opened on 52/58, and 58 in particular is a dark olive that
+  reads as **green** on most terminal themes — so a warning wash spent two of
+  its six frames wearing a success colour. A pulse whose colour changes meaning
+  mid-cycle communicates nothing.
 - **Background, not foreground.** The thing being flagged is a **number you
   still have to read**. Recolouring the glyphs fights legibility exactly when
   you most need the digits; a wash behind them leaves them intact. Bright white
@@ -175,7 +184,7 @@ then the **session total**.
 | `✻0.5` | cost of the **current turn** (one decimal) — the **animated flower stands in for the `$`** while it is still adding up |
 | *(or)* `$0.1 3m ago` | when idle: the finished turn's cost, `$` restored, + a ticking "N ago" clock |
 | *(or)* *nothing* | right after Enter, before this turn has billed: **no figure at all**, just the bare flower |
-| `!` | red — this turn **missed the prompt cache** (see §3.1) |
+| `(cache miss)` | red — this turn **missed the prompt cache** (see §3.1) |
 | `⊂` | subset: the turn's spend is *contained in* the session's (see below) |
 | `$25` | session total, **integer-truncated** (`int($)`), authoritative |
 
@@ -259,19 +268,25 @@ the baseline rolls forward (`prev_turn_cost` in the state file). It now only
 surfaces in the rare *idle-but-nothing-billed* corner; the ordinary
 just-hit-Enter window deliberately shows nothing instead.
 
-## 3.1 Prompt-cache miss — the red `!`
+## 3.1 Prompt-cache miss — the red `(cache miss)`
 
 ```
-Opus 4.8/xhigh 200K/1M | 98% left / 4:47h | ✻1.2! ⊂ $30 | +24% = 70% / 1d1h
+Opus 4.8/xhigh 200K/1M | 98% left / 4:47h | ✻1.2 (cache miss) ⊂ $30 | +24% = 70% / 1d1h
 ```
 
-A red `!` glued to the turn price means **this turn did not reuse the cached
-prompt prefix** — it paid to build it again.
+A red `(cache miss)` right after the turn price means **this turn did not reuse
+the cached prompt prefix** — it paid to build it again.
+
+It used to be a bare red `!`, and that failed for a reason worth recording: the
+marker fires rarely enough that by the time you see one you no longer remember
+what it meant, and a lone `!` next to a number reads as "big number" long before
+it reads as "cache". A label that costs eleven columns a handful of times a day
+is cheaper than a glyph you have to go look up.
 
 Why it deserves a glyph of its own: cached input is billed at **0.1×**, a cache
 *write* at **1.25×**. Re-sending a 200 K-token prefix uncached is therefore
 around a dollar of pure waste on Opus, and it is **completely invisible** in the
-price — the turn just looks "expensive today". The `!` names the reason.
+price — the turn just looks "expensive today". The label names the reason.
 
 ### How the verdict is reached (deterministic, from the API's own numbers)
 
@@ -311,7 +326,7 @@ Two guards keep it from crying wolf:
 - **`$cr = -1`** (no request in this turn yet) — no verdict to give. *Absence of
   data must never render as a miss*; that's how a warning glyph becomes noise
   and stops being read. Note this is exactly the flower-only window above, which
-  shows no price and hence no `!`.
+  shows no price and hence no label.
 
 Only the **main chain** is examined (`isSidechain != true`): a subagent has its
 own cache and its own prefix, so its hits and misses say nothing about yours.
@@ -325,9 +340,21 @@ The same `usage` blob states which bucket a cache write went into:
 ```
 
 So the session **reports its own TTL** — no guessing, no configuration to keep
-in sync. The most recent write with a non-zero bucket decides: `1h` if the 1-hour
-bucket is the larger, else `5m`; `300 s` is the fallback when nothing has been
-written yet.
+in sync. `300 s` is the fallback when nothing has been written yet.
+
+**Which write decides is not "the last one".** A session writes into *both*
+buckets: the stable prefix goes in at 1 h, and the conversational tail is
+re-written every turn at 5 m. One real session put **245 K into a single 1-hour
+write** and then a trickle of 1–3 K 5-minute writes — so last-write-wins reported
+`300 s`, and the bar went red five minutes after you stepped away while a quarter
+of a million cached tokens sat there for another hour. An alarm you cannot trust
+is worse than no alarm.
+
+The rule is therefore **by volume**: take the largest write in the session as the
+yardstick, keep only writes within 4× of it, and let the last of *those* decide.
+Tail deltas are ignored; a genuine mid-session switch still lands immediately,
+because once the session drops to 5-minute caching the next big write goes into
+the 5 m bucket and wins on its own.
 
 That number then drives the **`N ago` clock's colour** (still only when context
 ≥ 100 K, where a rebuild actually costs something):
@@ -335,8 +362,31 @@ That number then drives the **`N ago` clock's colour** (still only when context
 | Age since the last turn | Rendering | Meaning |
 |-------------------------|-----------|---------|
 | `< 0.8 × TTL` | plain | prefix is warm |
-| `0.8 × TTL … TTL` | **orange pulse** | last chance — send now and you still pay 0.1× |
-| `≥ TTL` | **red pulse** | prefix is gone; your next message rebuilds it at 1.25× |
+| `0.8 × TTL … TTL` | **orange pulse**, `4m ago <= 5m` | last chance — send now and you still pay 0.1× |
+| `≥ TTL` | **red pulse**, `51m ago > 5m (miss=$1.7)` | prefix is gone; your next message rebuilds it at the write price |
+
+**The clock states its own verdict.** `51m ago` is a number with no conclusion
+attached — the reader has to remember what the TTL is and do the comparison. So
+the pulsing form prints the comparison itself, `51m ago > 5m` or `4m ago <= 5m`,
+which is also the one wording that survives the TTL being 1 h instead of 5 m
+without quietly changing meaning. (Minutes run to **two** hours rather than one
+for the same reason: rounding 65 min to `1h` next to a 1-hour TTL renders the
+nonsense `1h ago > 1h`.)
+
+**And past the TTL it prices the loss.** `(miss=$1.7)` is the whole context
+re-written at the cache-**write** price instead of read at the cache-**read**
+price — the spread between the two multipliers, over `used_tokens`, at the
+model's own input rate (Opus $5/MTok, Sonnet $3, Haiku $1, Fable $10):
+
+| TTL | write | read | spread charged on the rebuild |
+|-----|-------|------|-------------------------------|
+| 5 m | 1.25× | 0.1× | **1.15×** base input |
+| 1 h | 2.00× | 0.1× | **1.90×** base input |
+
+So 300 K of Opus context is **$1.7** to lose on a 5-minute cache and **$2.8** on
+a 1-hour one. That inversion is the reason the figure is printed rather than left
+to intuition: the longer TTL is the *safer* setting right up until you blow past
+it, at which point it is the more expensive one.
 
 The clock and the context counter share one predicate — `cache_phase()`,
 returning `none` / `expiring` / `expired` — so the two can never disagree about
@@ -348,8 +398,8 @@ hour. On a 5-minute cache: orange at 4 min, red at 5. The old hardcoded
 early, every turn.
 
 The two signals are complements, not duplicates: the **orange clock is a
-forecast** ("you are about to lose it"), the **red `!` is a post-mortem** ("you
-just did").
+forecast** ("you are about to lose it"), the **red `(cache miss)` is a
+post-mortem** ("you just did").
 
 ---
 
@@ -358,9 +408,9 @@ just did").
 - Current/last-turn cost is a derived delta. If the very first render of a turn
   lands *after* the model already made an API call, that turn slightly
   undercounts (it self-corrects on the next turn).
-- The `!` and the TTL both need a **readable transcript**. In the newer
-  per-session storage format (the cost-clock fallback branch) there is none, so
-  no `!` is ever shown and the TTL falls back to 300 s.
+- The `(cache miss)` label and the TTL both need a **readable transcript**. In
+  the newer per-session storage format (the cost-clock fallback branch) there is
+  none, so no label is ever shown and the TTL falls back to 300 s.
 - A **context compaction** legitimately invalidates the prefix and will be
   flagged as a miss. That is accurate — it did cost you the rebuild.
 - The session total *includes* subagent/sidechain cost (it comes from
@@ -706,6 +756,18 @@ if [ -n "$effort" ]; then
     *)      model="${model}/${effort}" ;;
   esac
 fi
+# Input $/MTok for the model in play, so the cache-miss figure below is this
+# session's money and not a generic one. Read here, off the untouched display
+# name, because $model is rewritten further down (effort suffix, size label,
+# the @@CTX@@ placeholder) and by then the family is no longer reliably in it.
+case "$model" in
+  *Fable*|*Mythos*) in_rate=10 ;;
+  *Opus*)           in_rate=5 ;;
+  *Sonnet*)         in_rate=3 ;;
+  *Haiku*)          in_rate=1 ;;
+  *)                in_rate=5 ;;
+esac
+
 ctx=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
 total=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
 five=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
@@ -748,12 +810,19 @@ GREEN="${ESC}[38;5;78m"
 TEAL="${ESC}[38;5;80m"
 
 # --- Slow pulse -------------------------------------------------------------
-# Breathes a background from near-black up to full hue and back, one frame per
-# render (refreshInterval 1 => a 6-second cycle). Slow on purpose: a fast blink
-# is an alarm you learn to tune out within a day, while something that *breathes*
-# in the corner of your eye keeps registering as movement without demanding the
-# focus a hard blink does. Six steps also means no frame is far from its
-# neighbour, so it reads as a fade rather than a strobe.
+# Breathes a background from BLACK up to full hue and back, one frame per render
+# (refreshInterval 1 => 1 fps, a 6-second cycle). One frame a second is the whole
+# budget: the point is that something in the corner of your eye keeps moving, and
+# movement registers at 1fps just as well as at 10 — while a fast blink is an
+# alarm you learn to tune out within a day. Six steps also means no frame is far
+# from its neighbour, so it reads as a fade rather than a strobe.
+#
+# Both ramps start at 16 (true black) and stay on ONE hue the whole way up. The
+# earlier ramps opened on 52/58 — a dark red and, worse, a dark olive that reads
+# as green on most terminal themes, so the "warning" wash spent two of its six
+# frames looking like a success colour. A pulse whose colour changes meaning
+# mid-cycle communicates nothing; black->red is a single unambiguous statement,
+# and black->amber likewise.
 #
 # Background rather than foreground because the thing being flagged is a NUMBER
 # you still have to read: recolouring the glyphs fights legibility exactly when
@@ -761,8 +830,8 @@ TEAL="${ESC}[38;5;80m"
 # Bright white text is pinned on top so contrast holds at every step of the ramp.
 #
 #   pulse red|orange <text>
-RED_RAMP="52 88 124 160 124 88"
-ORANGE_RAMP="58 94 130 166 130 94"
+RED_RAMP="16 52 88 124 88 52"
+ORANGE_RAMP="16 94 130 166 130 94"
 pulse() {
   _hue=$1; shift
   case "$_hue" in
@@ -920,6 +989,13 @@ abbr_tok() {
 #   orange in the last 20% before the TTL (spend it or lose it),
 #   red once the TTL has passed (the prefix is gone; your next message pays the
 #   full 1.25x cache-WRITE price again instead of the 0.1x read price).
+# Concretely, on a 5-minute TTL: "4m ago" is >= 240s and still under 300s, so it
+# breathes ORANGE — the prefix is alive and you have about a minute to use it.
+# "51m ago" is far past 300s, so it breathes RED — that cache is already gone.
+# On a 1-hour TTL the same two readings say the opposite thing: "4m ago" is not
+# coloured at all, and "51m ago" is the orange one (48m is 80% of 60m) with red
+# only from 60m on. Which is exactly why the TTL is detected rather than assumed
+# — the same "51m ago" is a shrug or an emergency depending on it.
 # Only when the context is big (>=100K tokens) — below that the re-send isn't
 # expensive enough to warn about. Uses globals $used_tokens/$ttl_secs/colors.
 # Echoes nothing for empty/invalid input.
@@ -929,18 +1005,53 @@ fmt_age() {
   _mins=$((_secs / 60))
   if [ "$_mins" -lt 1 ]; then
     _rel="${_secs}s"
-  elif [ "$_mins" -lt 60 ]; then
+  elif [ "$_mins" -lt 120 ]; then
+    # Minutes up to TWO hours, not one. The hour bucket used to start at 60m,
+    # which made 65m render as "1h" — and next to a 1h TTL that prints the
+    # nonsense "1h ago > 1h", a comparison that looks false while being true.
+    # Minutes stay unambiguous through the whole range where the 1h cache is
+    # the thing being decided about.
     _rel="${_mins}m"
   else
     _h=$((_mins / 60))
     if [ "$_h" -lt 24 ]; then _rel="${_h}h"; else _rel="$((_h / 24))d"; fi
   fi
   _age="${_rel} ago"
+  # Say WHY it is pulsing, in the two terms the reader would otherwise have to
+  # supply from memory: the idle time and the TTL it is being measured against.
+  # "51m ago" alone is a number with no verdict attached — "51m ago > 5m" is the
+  # verdict, and it is also the one form that survives the TTL being 1h instead
+  # of 5m without silently changing meaning.
   case "$(cache_phase "$_secs")" in
-    expired)   _age=$(pulse red "$_age") ;;
-    expiring)  _age=$(pulse orange "$_age") ;;
+    expired)   _age=$(pulse red "$_age > $(fmt_ttl) (miss=$(miss_cost))") ;;
+    expiring)  _age=$(pulse orange "$_age <= $(fmt_ttl)") ;;
   esac
   printf ' %s' "$_age"
+}
+
+# The TTL as the reader thinks of it, not in seconds.
+fmt_ttl() {
+  if [ "${ttl_secs:-300}" -ge 3600 ]; then echo "1h"; else echo "5m"; fi
+}
+
+# What crossing the TTL just cost, in dollars, on the ONLY question that has a
+# defensible answer: the cached prefix has to be written again at the cache-WRITE
+# price instead of being read at the cache-READ price, so the loss is the spread
+# between the two multipliers over the whole context.
+#
+#   5m TTL:  write 1.25x, read 0.1x -> 1.15x base input, per token
+#   1h TTL:  write 2.00x, read 0.1x -> 1.90x base input, per token
+#
+# The 1h cache costs nearly twice as much to lose as the 5m one, which is the
+# opposite of the intuition that a longer TTL is strictly the safer setting —
+# reason enough to print the number rather than leave it to be guessed at.
+# Only shown past the TTL, and only above 100K tokens (cache_phase already
+# gates on that), so it never appears next to a sum too small to act on.
+miss_cost() {
+  _mult=1.15
+  [ "${ttl_secs:-300}" -ge 3600 ] && _mult=1.9
+  awk -v t="${used_tokens:-0}" -v r="${in_rate:-5}" -v m="$_mult" \
+    'BEGIN{ c = t/1000000 * r * m; printf (c >= 10 ? "$%.0f" : "$%.1f"), c }'
 }
 
 # Which side of the prompt-cache TTL is this idle gap on? The single source of
@@ -1007,9 +1118,30 @@ def isprompt: (.type=="user") and (.isSidechain!=true) and (.isMeta!=true)
 # TTL is not guesswork: the API reports which ephemeral bucket the cache write
 # went into (`cache_creation.ephemeral_5m_input_tokens` vs `..._1h_...`), so the
 # session states its own TTL. 0 = nothing written yet / unknown.
+#
+# But a session writes into BOTH buckets, so "whichever bucket the most recent
+# write landed in" is the wrong reading — and it was wrong in the common case. A
+# real session here put 245K into one 1h write and then a trickle of ~1-3K 5m
+# writes for the conversational tail; last-write-wins reported 300s, so the bar
+# went red five minutes after you stepped away while a quarter-million cached
+# tokens were still sitting there for another hour. An alarm you cannot trust is
+# worse than no alarm.
+#
+# What the pulse is actually about is the EXPENSIVE rebuild, so the TTL that
+# matters is the one guarding the bulk of the prefix. Take the largest write in
+# the session as the yardstick and keep only writes within 4x of it — that
+# ignores the tail deltas while still tracking a genuine mid-session switch (if
+# the session drops to 5m caching, the next big write lands in the 5m bucket and
+# wins on its own). Then `last` of those, so a switch takes effect immediately.
+# NOTE: no apostrophes below or above inside this program — it is one big
+# single-quoted shell string, and one stray quote ends it mid-jq.
 | ([ $all[] | select(.type=="assistant" and (.isSidechain!=true)) | .message.usage.cache_creation
-     | select(. != null and (((.ephemeral_1h_input_tokens//0)+(.ephemeral_5m_input_tokens//0)) > 0)) ] | last) as $cc
-| (if $cc == null then 0 elif (($cc.ephemeral_1h_input_tokens//0) > ($cc.ephemeral_5m_input_tokens//0)) then 3600 else 300 end) as $ttl
+     | select(. != null)
+     | {h: (.ephemeral_1h_input_tokens//0), m: (.ephemeral_5m_input_tokens//0)}
+     | select((.h + .m) > 0) ]) as $ccs
+| (($ccs | map(.h + .m) | max) // 0) as $ccmax
+| ([ $ccs[] | select((.h + .m) * 4 >= $ccmax) ] | last) as $cc
+| (if $cc == null then 0 elif ($cc.h > $cc.m) then 3600 else 300 end) as $ttl
 | "\($total)\t\($turn)\t\($lu_uuid)\t\($last_ts // "")\t\(if $idle then 1 else 0 end)\t\($cr)\t\($prev)\t\($ttl)"'
   sid=$(basename "$tp" .jsonl)
   # The jq -s above slurps the ENTIRE transcript (often multi-MB) — far too
@@ -1141,8 +1273,12 @@ if [ -n "$spend_ready" ]; then
   now=$(date +%s)
   idle="$fb_idle"; age_secs="$fb_age_secs"
 
-  # --- Prompt-cache verdict for the CURRENT turn, rendered as a red "!" glued to
-  # its cost ("$1.2! ✻ $30"). The question it answers is the one you can't see
+  # --- Prompt-cache verdict for the CURRENT turn, rendered as a red "(cache
+  # miss)" right after its cost ("$1.2 (cache miss) ⊂ $30"). Spelled out rather
+  # than a bare "!" because the glyph was unreadable: it fires rarely enough that
+  # by the time you see one you no longer remember what it meant, and a lone "!"
+  # next to a number reads as "big number" long before it reads as "cache".
+  # The question it answers is the one you can't see
   # from the price alone: did this turn reuse the cached prefix at 0.1x, or did
   # it rebuild it at 1.25x? A rebuilt 200K prefix is roughly a dollar of pure
   # waste, and it is invisible unless something points at it.
@@ -1162,7 +1298,7 @@ if [ -n "$spend_ready" ]; then
   cache_bang=""
   if [ "$turn_cache_read" -ge 0 ] && [ "$prev_prompt" -ge 5000 ] \
      && [ "$turn_cache_read" -lt $((prev_prompt / 2)) ]; then
-    cache_bang="${RED}!${RESET}"
+    cache_bang="${RED} (cache miss)${RESET}"
   fi
   hookstate="/tmp/claude-turn-${session_id:-default}.state"
   if [ -f "$hookstate" ]; then
@@ -1381,7 +1517,7 @@ fi
 # Three reasons the number stops being calm blue, in priority order:
 #   1. the cached prefix has EXPIRED           -> red pulse
 #   2. it is about to expire                   -> orange pulse
-#   3. the context is simply enormous (>300K)  -> red pulse
+#   3. the context is simply enormous (>300K)  -> static red
 # (1) and (2) also pulse the "N ago" clock, and the pair is the whole point: the
 # clock says how long the cache has left, the token count says how much it is
 # worth. Watching either alone tells you half of "is idling here about to cost
@@ -1401,7 +1537,12 @@ if [ -n "$abs_label" ]; then
     expiring) ctx_render=$(pulse orange "$abs_label") ;;
     *)
       if [ "${used_tokens:-0}" -gt 300000 ] 2>/dev/null; then
-        ctx_render=$(pulse red "$abs_label")
+        # Static red, NOT a pulse: an oversized context is a standing fact, not
+        # an event. The breathing background is reserved for the cache-TTL cases
+        # above, which are time-critical and only fire while idle — letting the
+        # size rule pulse too meant a 380K session washed red for the whole turn,
+        # which is exactly when there is nothing you can do about it.
+        ctx_render="${RED}${abs_label}${RESET}"
       else
         ctx_render="${BLUE}${abs_label}${RESET}"
       fi
