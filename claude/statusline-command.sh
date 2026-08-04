@@ -1,0 +1,728 @@
+#!/bin/sh
+# Claude Code status line:
+#   "Model (ctx% of SIZE) | 5h% left | spend | folder[@branch] | 7d quota"
+#
+# MAINTENANCE RULE: whenever this script changes (format, segments, colors,
+# thresholds, turn-state logic — anything that alters behaviour), update its
+# companion reference in the same change:
+#   ~/workspace/victor-statusline/claude/victor-claude-statusline.md
+#   (published at https://github.com/victorrentea/victor-statusline)
+# The two are one unit; a behaviour change not reflected there is a bug in the
+# change, not a follow-up.
+input=$(cat)
+session_id=$(echo "$input" | jq -r '.session_id // empty')
+model=$(echo "$input" | jq -r '.model.display_name // "Claude"' | sed 's/ context)/)/')
+effort=$(echo "$input" | jq -r '.effort.level // empty')
+if [ -n "$effort" ]; then
+  case "$model" in
+    *" ("*) model="${model%% (*}/${effort} (${model#* (}" ;;
+    *)      model="${model}/${effort}" ;;
+  esac
+fi
+ctx=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
+total=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
+five=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+week=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+week_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+
+# `rate_limits` is NOT a live feed: it caches the headers of *this session's*
+# last API response. A terminal that has been idle keeps showing frozen numbers,
+# which is why two terminals disagree about how much quota is left. Merge with
+# the machine-wide file so every terminal displays the freshest reading any of
+# them has seen. The merged value is shown unmarked: which terminal measured it
+# is bookkeeping, not something worth spending a glyph on.
+merged=$("$HOME/.claude/hooks/quota-state.sh" publish \
+  "${five:-}" "${reset:-0}" "${week:-}" "${week_reset:-0}" 2>/dev/null)
+if [ -n "$merged" ]; then
+  m_five=$(printf '%s' "$merged" | cut -d' ' -f1)
+  m_reset=$(printf '%s' "$merged" | cut -d' ' -f2)
+  m_week=$(printf '%s' "$merged" | cut -d' ' -f3)
+  m_week_reset=$(printf '%s' "$merged" | cut -d' ' -f4)
+  if [ "$m_five" != "-1" ]; then
+    five=$m_five
+    reset=$m_reset
+  fi
+  if [ -n "$m_week" ] && [ "$m_week" != "-1" ]; then
+    week=$m_week
+    week_reset=$m_week_reset
+  fi
+fi
+
+ESC=$(printf '\033')
+RESET="${ESC}[0m"
+ORANGE="${ESC}[38;5;208m"
+RED="${ESC}[31m"
+BLUE="${ESC}[38;5;111m"
+GREEN="${ESC}[38;5;78m"
+# Claude Code paints the prompt box border and the session title on it in teal;
+# 80 (#5fd7d7) is the closest 256-colour match, so the folder name in the status
+# line reads as part of that same frame. Bump to 73/79/116 to taste.
+TEAL="${ESC}[38;5;80m"
+
+# --- Slow pulse -------------------------------------------------------------
+# Breathes a background from near-black up to full hue and back, one frame per
+# render (refreshInterval 1 => a 6-second cycle). Slow on purpose: a fast blink
+# is an alarm you learn to tune out within a day, while something that *breathes*
+# in the corner of your eye keeps registering as movement without demanding the
+# focus a hard blink does. Six steps also means no frame is far from its
+# neighbour, so it reads as a fade rather than a strobe.
+#
+# Background rather than foreground because the thing being flagged is a NUMBER
+# you still have to read: recolouring the glyphs fights legibility exactly when
+# you most need the digits, whereas a wash behind them leaves them intact.
+# Bright white text is pinned on top so contrast holds at every step of the ramp.
+#
+#   pulse red|orange <text>
+RED_RAMP="52 88 124 160 124 88"
+ORANGE_RAMP="58 94 130 166 130 94"
+pulse() {
+  _hue=$1; shift
+  case "$_hue" in
+    red) _ramp=$RED_RAMP ;;
+    *)   _ramp=$ORANGE_RAMP ;;
+  esac
+  # $now is the render's wall clock; the same second gives the same frame
+  # everywhere in the bar, so context and clock breathe in unison.
+  _frame=$(( ${now:-$(date +%s)} % 6 + 1 ))
+  _bg=$(echo "$_ramp" | cut -d' ' -f"$_frame")
+  printf '%s[48;5;%sm%s[38;5;231m%s%s' "$ESC" "$_bg" "$ESC" "$*" "$RESET"
+}
+
+if [ -n "$ctx" ]; then
+  ctx_pct=$(printf '%.0f' "$ctx")
+
+  # Resolve size label
+  size_label=""
+  if echo "$model" | grep -q '('; then
+    size_label=$(echo "$model" | sed -n 's/.*(\(.*\)).*/\1/p')
+    model=$(echo "$model" | sed 's/ *(.*)//')
+  elif [ -n "$total" ]; then
+    if [ "$total" -ge 1000000 ]; then
+      size_label=$(printf '%.0fM' "$(echo "$total / 1000000" | bc -l)")
+    else
+      size_label=$(printf '%.0fK' "$(echo "$total / 1000" | bc -l)")
+    fi
+  fi
+
+  if [ -n "$size_label" ] && [ -n "$total" ]; then
+    used_tokens=$(printf '%.0f' "$(echo "$ctx * $total / 100" | bc -l)")
+    if [ "$used_tokens" -ge 1000000 ]; then
+      abs_label=$(printf '%.2fM' "$(echo "$used_tokens / 1000000" | bc -l)")
+    elif [ "$used_tokens" -ge 1000 ]; then
+      abs_label=$(printf '%.0fK' "$(echo "$used_tokens / 1000" | bc -l)")
+    else
+      abs_label="${used_tokens}"
+    fi
+    pct_str="${ctx_pct}%"
+    if [ "$ctx_pct" -ge 95 ]; then
+      pct_str="${RED}${pct_str}${RESET}"
+    elif [ "$ctx_pct" -ge 65 ]; then
+      pct_str="${ORANGE}${pct_str}${RESET}"
+    fi
+    # On the 1M window the "used/size" pair (e.g. 100K/1M) already makes the
+    # percentage trivial to eyeball, so drop the explicit "• N%" there; keep it
+    # for smaller windows where the ratio is less obvious.
+    # The token count is emitted as a PLACEHOLDER, not as final text: whether it
+    # should sit still in blue or breathe orange/red depends on the prompt-cache
+    # TTL and on how long you have been idle, and neither is known until the
+    # transcript has been parsed a hundred lines below. Substituting at the end
+    # keeps this block about layout and the pulse decision in one place with the
+    # other cache logic, instead of splitting the rule across the file.
+    if [ "$size_label" = "1M" ]; then
+      model="$model @@CTX@@/${size_label}"
+    else
+      model="$model @@CTX@@/${size_label} • ${pct_str}"
+    fi
+  fi
+fi
+
+out="$model"
+
+if [ -n "$five" ]; then
+  left=$(printf '%.0f' "$(echo "100 - $five" | bc -l)")
+  ind=""
+  dur=""
+  until_time=""
+  if [ -n "$reset" ]; then
+    now=$(date +%s)
+    diff=$((reset - now))
+    if [ "$diff" -gt 0 ]; then
+      h=$((diff / 3600))
+      m=$(((diff % 3600) / 60))
+      until_time=$(date -r "$reset" +%H:%M)
+      if [ "$h" -gt 0 ]; then
+        dur=$(printf '%d:%02dh' "$h" "$m")
+      else
+        dur="${m}m"
+      fi
+      # Burn-rate vs time: compare quota-remaining to time-remaining within the
+      # 5h (18000s) window. ratio r = quota_left_frac / time_left_frac.
+      # r>1 => more quota than time left (surplus); r<1 => burning too fast.
+      ind=$(awk -v five="$five" -v diff="$diff" 'BEGIN{
+        q=(100-five)/100; t=diff/18000;
+        if (t<=0){ exit }
+        r=q/t;
+        if (r>=1.5)       print "↑";
+        else if (r>=1.15) print "↗";
+        else if (r>=0.87) print "";
+        else if (r>=0.67) print "↘";
+        else              print "↓";
+      }')
+      # Color the burn-rate arrow: up/surplus green, mild deficit orange, hard deficit red.
+      case "$ind" in
+        "↑"|"↗") ind="${GREEN}${ind}${RESET}" ;;
+        "↘")     ind="${ORANGE}${ind}${RESET}" ;;
+        "↓")     ind="${RED}${ind}${RESET}" ;;
+      esac
+    fi
+  fi
+  # Arrow LEADS the number ("↗98% left"), it does not trail it. The arrow is the
+  # part you read at a glance without parsing digits, and in a left-to-right line
+  # the glance lands on the first glyph of the segment — so the trend gets that
+  # slot and the exact figure follows for when you actually care.
+  pct_part="${ind}${left}%"
+  # "↗98% left / 4:47h": quota-left and time-left are two readings of the SAME
+  # window, joined with "/" rather than the "•" it replaces; "|" stays reserved
+  # for segment boundaries, so the eye still parses where the segment ends.
+  if [ -n "$dur" ]; then
+    body="${pct_part} left / ${dur}"
+  else
+    body="${pct_part} left"
+  fi
+  if [ "$left" -lt 5 ]; then
+    body="${RED}${body}${RESET}"
+  elif [ "$left" -lt 15 ]; then
+    body="${ORANGE}${body}${RESET}"
+  fi
+  # Parked by quota-gate.sh: this terminal is sleeping until the window resets.
+  # Show the wake time so a frozen-looking terminal is legibly frozen on purpose.
+  park="$HOME/.claude/quota-park/$session_id"
+  if [ -n "$session_id" ] && [ -f "$park" ]; then
+    pwake=$(cat "$park" 2>/dev/null)
+    if [ -n "$pwake" ] && [ "$pwake" -gt "$(date +%s)" ] 2>/dev/null; then
+      body="${body} • ${ORANGE}💤$(date -r "$pwake" +%H:%M)${RESET}"
+    fi
+  fi
+  five_str="${body}"
+  out="$out | $five_str"
+fi
+
+# Session spend, broken down as: last turn + session total, each with its token count.
+# cost.total_cost_usd is authoritative (matches /usage "Total cost", incl. subagents) but
+# is only a running session total; the transcript has no per-message cost (costUSD is null).
+# So the last turn's cost is tracked as the delta of the session total since the turn began,
+# and the last turn's tokens are summed from the transcript's assistant messages after the
+# most recent user prompt. Tokens are deduped by requestId (streaming logs the same usage
+# on several lines per API request, so a naive sum over-counts ~2-3x).
+abbr_tok() {
+  t=$1
+  if [ "$t" -ge 1000000 ] 2>/dev/null; then
+    printf '%.2fM' "$(echo "$t / 1000000" | bc -l)"
+  elif [ "$t" -ge 1000 ] 2>/dev/null; then
+    printf '%.0fK' "$(echo "$t / 1000" | bc -l)"
+  else
+    printf '%s' "$t"
+  fi
+}
+
+# Format seconds-since-the-turn-ended as " <rel> ago" (leading space included):
+#   <60s -> "Ns" (ticks 1s,2s,3s...), <60m -> "Nm", <24h -> "Nh", else "Nd".
+# Colored against the ACTUAL prompt-cache TTL of this session ($ttl_secs, read
+# off the API usage — 300s or 3600s, see below), not a hardcoded 5 minutes:
+#   orange in the last 20% before the TTL (spend it or lose it),
+#   red once the TTL has passed (the prefix is gone; your next message pays the
+#   full 1.25x cache-WRITE price again instead of the 0.1x read price).
+# Only when the context is big (>=100K tokens) — below that the re-send isn't
+# expensive enough to warn about. Uses globals $used_tokens/$ttl_secs/colors.
+# Echoes nothing for empty/invalid input.
+fmt_age() {
+  _secs=$1
+  case "$_secs" in ''|*[!0-9]*) return 0 ;; esac
+  _mins=$((_secs / 60))
+  if [ "$_mins" -lt 1 ]; then
+    _rel="${_secs}s"
+  elif [ "$_mins" -lt 60 ]; then
+    _rel="${_mins}m"
+  else
+    _h=$((_mins / 60))
+    if [ "$_h" -lt 24 ]; then _rel="${_h}h"; else _rel="$((_h / 24))d"; fi
+  fi
+  _age="${_rel} ago"
+  case "$(cache_phase "$_secs")" in
+    expired)   _age=$(pulse red "$_age") ;;
+    expiring)  _age=$(pulse orange "$_age") ;;
+  esac
+  printf ' %s' "$_age"
+}
+
+# Which side of the prompt-cache TTL is this idle gap on? The single source of
+# truth for both things that react to it — the "N ago" clock and the context
+# counter — so they can never disagree about what state the cache is in.
+#   expiring = inside the last 20% before the TTL: the prefix is still warm, send
+#              something NOW and you keep paying 0.1x
+#   expired  = past the TTL: the prefix is gone, the next message rebuilds it at
+#              1.25x
+# Silent below 100K tokens: there the rebuild is too cheap to interrupt anyone
+# over, and a bar that pulses during trivial sessions is a bar you stop reading.
+cache_phase() {
+  _s=$1
+  case "$_s" in ''|*[!0-9]*) echo none; return ;; esac
+  [ "${used_tokens:-0}" -ge 100000 ] 2>/dev/null || { echo none; return; }
+  _t=${ttl_secs:-300}
+  if [ "$_s" -ge "$_t" ]; then echo expired
+  elif [ "$_s" -ge $((_t * 4 / 5)) ]; then echo expiring
+  else echo none
+  fi
+}
+
+cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty')
+[ -n "$cost" ] || cost=0
+tp=$(echo "$input" | jq -r '.transcript_path // empty')
+spend_seg=""
+
+if [ -n "$tp" ] && [ -f "$tp" ]; then
+  tok_prog='
+def utoks($u): ($u // {}) | ((.input_tokens//0)+(.output_tokens//0)+(.cache_read_input_tokens//0)+(.cache_creation_input_tokens//0));
+# Everything that was SENT on a request (prompt side only, no output): the three
+# input buckets. On a cache hit almost all of it lands in cache_read.
+def ptoks($u): ($u // {}) | ((.input_tokens//0)+(.cache_read_input_tokens//0)+(.cache_creation_input_tokens//0));
+def isprompt: (.type=="user") and (.isSidechain!=true) and (.isMeta!=true)
+  and (((.message.content|type)=="string")
+       or (((.message.content|type)=="array") and ((.message.content|map(.type)|index("tool_result"))==null)));
+. as $all
+| ([ range(0; ($all|length)) as $i | select($all[$i]|isprompt) | $i ] | last) as $lu
+| ([ range(0; ($all|length)) as $i | select($all[$i].type=="assistant" and ($all[$i].isSidechain != true)) | $i ] | last) as $lastA
+| ($lastA != null
+   and (($all[$lastA].message.stop_reason // "") != "tool_use")
+   and ([ range(($lastA + 1); ($all|length)) as $j
+          | select($all[$j].type=="user" and ($all[$j].isSidechain != true) and ($all[$j].isMeta != true)) ] | length) == 0
+  ) as $idle
+| ([ $all[] | select(.type=="assistant" and .requestId!=null) ] | group_by(.requestId) | map(utoks(.[0].message.usage)) | add // 0) as $total
+| ([ ($all[ (($lu // -1)+1) : ])[] | select(.type=="assistant" and .requestId!=null) ] | group_by(.requestId) | map(utoks(.[0].message.usage)) | add // 0) as $turn
+| (if $lu==null then "" else ($all[$lu].uuid // "") end) as $lu_uuid
+| ([ $all[] | select(.type=="assistant" and (.isSidechain != true)) | .timestamp // empty ] | last) as $last_ts
+# --- Prompt-cache forensics, main chain only (a subagent has its own cache, so
+#     sidechain requests say nothing about whether YOUR prefix survived).
+# $cr    = cached tokens READ by the FIRST request of the current turn. That one
+#          request is the whole story: it is the one that either reuses the
+#          prefix or pays to rebuild it; later requests in the turn re-hit what
+#          it just wrote.
+# $prev  = prompt size of the LAST request before this turn — i.e. exactly the
+#          prefix that WAS cached and that this turn should have read back.
+#          Comparing $cr against $prev (rather than against a fixed number) is
+#          what makes the verdict robust: normal turn-over-turn growth still
+#          reads back ~all of $prev, while an expired prefix reads back ~none.
+| ([ ($all[(($lu // -1)+1):])[] | select(.type=="assistant" and .requestId!=null and (.isSidechain!=true)) ] | first | .message.usage) as $fu
+| ([ $all[0:(($lu // 0))][] | select(.type=="assistant" and .requestId!=null and (.isSidechain!=true)) ] | last | .message.usage) as $pu
+| (if $fu == null then -1 else ($fu.cache_read_input_tokens // 0) end) as $cr
+| (ptoks($pu)) as $prev
+# TTL is not guesswork: the API reports which ephemeral bucket the cache write
+# went into (`cache_creation.ephemeral_5m_input_tokens` vs `..._1h_...`), so the
+# session states its own TTL. 0 = nothing written yet / unknown.
+| ([ $all[] | select(.type=="assistant" and (.isSidechain!=true)) | .message.usage.cache_creation
+     | select(. != null and (((.ephemeral_1h_input_tokens//0)+(.ephemeral_5m_input_tokens//0)) > 0)) ] | last) as $cc
+| (if $cc == null then 0 elif (($cc.ephemeral_1h_input_tokens//0) > ($cc.ephemeral_5m_input_tokens//0)) then 3600 else 300 end) as $ttl
+| "\($total)\t\($turn)\t\($lu_uuid)\t\($last_ts // "")\t\(if $idle then 1 else 0 end)\t\($cr)\t\($prev)\t\($ttl)"'
+  sid=$(basename "$tp" .jsonl)
+  # The jq -s above slurps the ENTIRE transcript (often multi-MB) — far too
+  # costly to re-run on every 1s idle refresh. Cache its single-line output and
+  # reuse it while the transcript file is untouched (same mtime); any new
+  # message bumps the mtime and forces a fresh parse. This keeps
+  # refreshInterval=1 cheap so the idle "N ago" clock can tick per-second.
+  # -v2: the cached line grew three fields (cache read / previous prompt size /
+  # TTL). The cache is keyed by mtime alone, so a v1 line would be served as
+  # valid until the transcript next changes; the version in the name retires it.
+  cache="/tmp/claude-statusline-cache-v2-${sid}.txt"
+  mtime=$(stat -f %m "$tp" 2>/dev/null)
+  cached_mtime=""; tok_line=""
+  if [ -f "$cache" ]; then
+    cached_mtime=$(sed -n '1p' "$cache")
+    tok_line=$(sed -n '2p' "$cache")
+  fi
+  if [ -z "$tok_line" ] || [ "$cached_mtime" != "$mtime" ]; then
+    tok_line=$(jq -s -r "$tok_prog" "$tp" 2>/dev/null)
+    printf '%s\n%s\n' "$mtime" "$tok_line" > "$cache"
+  fi
+  total_tok=$(printf '%s' "$tok_line" | cut -f1)
+  turn_tok=$(printf '%s' "$tok_line" | cut -f2)
+  last_user=$(printf '%s' "$tok_line" | cut -f3)
+  last_ts=$(printf '%s' "$tok_line" | cut -f4)
+  idle=$(printf '%s' "$tok_line" | cut -f5)
+  turn_cache_read=$(printf '%s' "$tok_line" | cut -f6)
+  prev_prompt=$(printf '%s' "$tok_line" | cut -f7)
+  ttl_secs=$(printf '%s' "$tok_line" | cut -f8)
+  [ -n "$total_tok" ] || total_tok=0
+  [ -n "$turn_tok" ] || turn_tok=0
+
+  # Track the cost delta for the current turn in a per-session state file.
+  state="/tmp/claude-statusline-turn-${sid}.txt"
+  prev_uuid=""; base=""; prev_turn_cost=""
+  if [ -f "$state" ]; then
+    prev_uuid=$(sed -n '1p' "$state")
+    base=$(sed -n '2p' "$state")
+    prev_turn_cost=$(sed -n '3p' "$state")
+  fi
+  if [ "$prev_uuid" != "$last_user" ] || [ -z "$base" ]; then
+    # New user prompt => the turn that just finished becomes the "previous
+    # turn". Snapshot its cost (cost - old base) before rolling the baseline
+    # forward, so the brief window before the new turn's usage lands can keep
+    # showing the previous turn's number instead of flashing $0.00.
+    if [ -n "$base" ]; then
+      prev_turn_cost=$(echo "$cost - $base" | bc -l)
+      [ "$(echo "$prev_turn_cost < 0" | bc -l)" = "1" ] && prev_turn_cost=0
+    fi
+    base="$cost"
+    printf '%s\n%s\n%s\n' "$last_user" "$cost" "$prev_turn_cost" > "$state"
+  fi
+  turn_cost=$(echo "$cost - $base" | bc -l)
+  if [ "$(echo "$turn_cost < 0" | bc -l)" = "1" ]; then turn_cost=0; fi
+  [ -n "$prev_turn_cost" ] || prev_turn_cost=0
+
+  # Fallback idle/age from the transcript's stop_reason + last-message timestamp.
+  # Used only until the Stop hook has run on this session (the hook state in the
+  # shared block below is authoritative once present).
+  fb_idle="$idle"
+  fb_age_secs=""
+  if [ -n "$last_ts" ]; then
+    ts_clean=${last_ts%%.*}; ts_clean=${ts_clean%Z}
+    ts_epoch=$(date -j -u -f "%Y-%m-%dT%H:%M:%S" "$ts_clean" +%s 2>/dev/null)
+    if [ -n "$ts_epoch" ]; then
+      _now=$(date +%s); fb_age_secs=$((_now - ts_epoch)); [ "$fb_age_secs" -lt 0 ] && fb_age_secs=0
+    fi
+  fi
+  spend_ready=1
+elif [ -n "$cost" ]; then
+  # === No readable transcript. Claude Code 2.1.x stores some sessions in a
+  # per-session directory and still hands the status line a "<id>.jsonl" path
+  # that doesn't exist, and there's no documented way to find the real one. With
+  # no stop_reason we infer turn state from the COST CLOCK: total_cost_usd rises
+  # while the agent works and goes flat between turns, and refreshInterval=1
+  # re-runs us every second. So cost flat for >= IDLE_GRACE seconds => idle, and
+  # the age is the time since cost last moved (~ when the turn ended). Only a flat
+  # stretch over NEW_TURN_GAP rolls the baseline to a genuinely new turn, so a
+  # tool/think pause mid-turn doesn't split one turn's cost in two.
+  # Caveat (accepted): a long mid-turn step with no API billing (cost flat) can
+  # briefly read as "previous turn" + a ticking age; it snaps back when cost moves.
+  IDLE_GRACE=3          # seconds of flat cost before we call it idle
+  NEW_TURN_GAP=30       # flat-cost gap that marks a real new user turn
+  state="/tmp/claude-statusline-heur-${session_id:-default}.txt"
+  now=$(date +%s)
+  # State lines: 1) cost-last-changed epoch  2) turn baseline cost
+  #              3) previous turn's cost      4) cost at the previous render
+  change_epoch=""; turn_base=""; prev_turn_cost=""; prev_cost=""
+  if [ -f "$state" ]; then
+    change_epoch=$(sed -n '1p' "$state")
+    turn_base=$(sed -n '2p' "$state")
+    prev_turn_cost=$(sed -n '3p' "$state")
+    prev_cost=$(sed -n '4p' "$state")
+  fi
+  case "$change_epoch" in ''|*[!0-9]*) change_epoch="" ;; esac
+  if [ -z "$turn_base" ] || [ -z "$change_epoch" ] || [ -z "$prev_cost" ]; then
+    # First render (or migrating from an older state file): start a turn here.
+    turn_base="$cost"; change_epoch="$now"; prev_cost="$cost"
+    [ -n "$prev_turn_cost" ] || prev_turn_cost=0
+  elif [ "$(echo "$cost != $prev_cost" | bc -l)" = "1" ]; then
+    # Cost moved. If it had been flat long enough to be a genuine new turn, roll
+    # the baseline forward (the just-finished turn becomes the "previous turn").
+    if [ "$((now - change_epoch))" -ge "$NEW_TURN_GAP" ]; then
+      prev_turn_cost=$(echo "$prev_cost - $turn_base" | bc -l)
+      [ "$(echo "$prev_turn_cost < 0" | bc -l)" = "1" ] && prev_turn_cost=0
+      turn_base="$prev_cost"
+    fi
+    change_epoch="$now"
+  fi
+  [ -n "$prev_turn_cost" ] || prev_turn_cost=0
+  printf '%s\n%s\n%s\n%s\n' "$change_epoch" "$turn_base" "$prev_turn_cost" "$cost" > "$state"
+
+  turn_cost=$(echo "$cost - $turn_base" | bc -l)
+  [ "$(echo "$turn_cost < 0" | bc -l)" = "1" ] && turn_cost=0
+  secs_idle=$((now - change_epoch)); [ "$secs_idle" -lt 0 ] && secs_idle=0
+  if [ "$secs_idle" -ge "$IDLE_GRACE" ]; then fb_idle=1; else fb_idle=0; fi
+  fb_age_secs="$secs_idle"
+  spend_ready=1
+fi
+
+# --- Idle + age (shared): prefer Claude Code's lifecycle hooks (Stop /
+#     UserPromptSubmit, written by ~/.claude/hooks/turn-state.sh), which mark turn
+#     boundaries reliably for EVERY storage format. The status-line JSON has no
+#     live "is the agent thinking?" signal, and new-format sessions have no
+#     readable transcript — so the hook state is authoritative whenever it exists.
+#     The per-branch signal (transcript stop_reason / cost heuristic) is only a
+#     fallback until this session's first Stop hook has run.
+if [ -n "$spend_ready" ]; then
+  now=$(date +%s)
+  idle="$fb_idle"; age_secs="$fb_age_secs"
+
+  # --- Prompt-cache verdict for the CURRENT turn, rendered as a red "!" glued to
+  # its cost ("$1.2! ✻ $30"). The question it answers is the one you can't see
+  # from the price alone: did this turn reuse the cached prefix at 0.1x, or did
+  # it rebuild it at 1.25x? A rebuilt 200K prefix is roughly a dollar of pure
+  # waste, and it is invisible unless something points at it.
+  #
+  # Deterministic, not guessed: compare what the turn's first request READ back
+  # ($turn_cache_read) with what the request before it had cached
+  # ($prev_prompt). Half is the cut-off — measured misses read back ~0-7% of the
+  # prefix, while healthy turns read back 80-100% even after a fat tool result,
+  # so nothing real lands near the line. Two guards keep it quiet:
+  #   * $prev_prompt < 5000 -> there was nothing worth caching yet (and the
+  #     session's very first turn, where a miss is unavoidable, has $prev = 0);
+  #   * $turn_cache_read = -1 -> the turn has issued no request yet, so there is
+  #     no verdict to give. Absence of data must not read as a miss.
+  case "$turn_cache_read" in ''|*[!0-9-]*) turn_cache_read=-1 ;; esac
+  case "$prev_prompt" in ''|*[!0-9]*) prev_prompt=0 ;; esac
+  case "$ttl_secs" in ''|*[!0-9]*|0) ttl_secs=300 ;; esac
+  cache_bang=""
+  if [ "$turn_cache_read" -ge 0 ] && [ "$prev_prompt" -ge 5000 ] \
+     && [ "$turn_cache_read" -lt $((prev_prompt / 2)) ]; then
+    cache_bang="${RED}!${RESET}"
+  fi
+  hookstate="/tmp/claude-turn-${session_id:-default}.state"
+  if [ -f "$hookstate" ]; then
+    hstate=$(sed -n '1p' "$hookstate"); hts=$(sed -n '2p' "$hookstate")
+    case "$hstate" in
+      # Keep age_secs (the fallback "time since last activity") ticking even while
+      # working, so the "<age> ago" clock keeps running through the window right
+      # after you hit Enter — until this turn's first cost actually lands.
+      working) idle=0 ;;
+      idle)    idle=1; case "$hts" in ''|*[!0-9]*) ;; *) age_secs=$((now - hts)); [ "$age_secs" -lt 0 ] && age_secs=0 ;; esac ;;
+    esac
+  fi
+  # Displayed cost + label. Three states, driven by "am I working" AND by whether
+  # the current turn has actually billed yet (turn_cost>0):
+  #   working, nothing billed yet (you just hit Enter) -> the animated flower
+  #     ALONE ("✻ $12"). The previous turn's price vanishes the instant you press
+  #     Enter: for the 10-20s before the first response lands there is no current
+  #     cost, and leaving the old number on screen means the one figure you look
+  #     at is silently stale — you read "$1.4" and attribute it to the thing you
+  #     just asked for. Better an empty slot that is honestly empty; the flower
+  #     says "counting has started, no number yet".
+  #   working AND the current turn has cost -> live figure with the animated
+  #     flower STANDING IN FOR THE "$" ("✻0.7 ⊂ $12"). The currency sign is the
+  #     one cell in the segment that carries no information — you know the units
+  #     — so it is the right place to spend on the animation: the bloom sits
+  #     directly ON the number that is still growing, rather than off to one
+  #     side, and the figure it qualifies cannot be mistaken for the total.
+  #     Nothing shifts width when it starts or stops.
+  #   idle -> the finished turn's figure, its "$" back, plus a ticking
+  #     "<age> ago" — the "ago" already says it's the last turn.
+  # The separator between the two figures is ALWAYS "⊂", in every state.
+  if [ "$idle" != "1" ]; then
+    # Claude Code's own "Working…" spinner: the asterisk-flower blooming and
+    # closing again (· ✢ ✳ ✻ ✽ then back down), so the status line pulses in
+    # sync with the spinner above the prompt. Every glyph is a single cell, so
+    # the segment never changes width. The frame index comes from the wall clock
+    # ($now, already fetched) and refreshInterval=1 is what advances it — the
+    # animation costs no extra work per render.
+    #
+    # ∗ (U+2217) is deliberately NOT in the cycle even though Claude Code uses
+    # it: it is a MATH OPERATOR, not a Dingbat like the others, so the font
+    # centres it on the math axis and it visibly sags below the baseline next to
+    # ✳/✻/✽ — one frame of the bloom dropping half a pixel-row. Five frames that
+    # sit still beat six that twitch.
+    case $((now % 8)) in
+      0) flower="·" ;;
+      1|7) flower="✢" ;;
+      2|6) flower="✳" ;;
+      3|5) flower="✻" ;;
+      *) flower="✽" ;;
+    esac
+    # The flower stands in for the "$". No cost yet on this turn => print no
+    # figure at all and let the bare flower open the segment.
+    if [ "$(echo "$turn_cost > 0" | bc -l)" = "1" ]; then
+      turn_money=$(printf '%s%.1f' "$flower" "$turn_cost")
+    else
+      turn_money=""
+    fi
+    turn_suffix=""
+    lone="$flower"
+  else
+    # idle after a finished turn -> that turn's cost is in turn_cost; just after
+    # Enter (turn_cost==0) -> fall back to the previous turn's cost.
+    if [ "$(echo "$turn_cost > 0" | bc -l)" = "1" ]; then disp_cost="$turn_cost"; else disp_cost="$prev_turn_cost"; fi
+    turn_money=$(printf '$%.1f' "$disp_cost")
+    age_str=""
+    [ -n "$age_secs" ] && age_str=$(fmt_age "$age_secs")
+    turn_suffix="$age_str"
+    lone=""
+  fi
+  # "⊂", not a neutral bullet: the two figures are not siblings — the turn's
+  # spend is CONTAINED IN the session's. The subset sign states that in one cell,
+  # so "$0.6 ⊂ $3" reads as "this turn is part of that", not as "0.6 and 3".
+  # Subset rather than the element-of "∈" it replaced, because what is on the
+  # left is not a single member of the total but a *portion* of it — the same
+  # kind of quantity, a piece of the same money.
+  sep="⊂"
+  total_money=$(awk -v c="$cost" 'BEGIN{printf "$%d", int(c)}')
+  if [ -n "$turn_money" ]; then
+    spend_seg="${turn_money}${cache_bang}${turn_suffix} ${sep} ${total_money}"
+  else
+    # Nothing billed yet: no figure, so no relation to state either — just the
+    # flower and the total ("✻ $12").
+    spend_seg="${lone} ${total_money}"
+  fi
+fi
+
+if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
+  out="$out | $spend_seg"
+fi
+
+# NO location segment here — deliberately. "Which folder / which branch / which
+# worktree" now lives in the SESSION TITLE, drawn by ~/.claude/hooks/session-title.sh
+# on the prompt box border one line above this bar. Printing it in both places
+# spent columns on the screen's most static fact twice over; the status line is
+# for what CHANGES (spend, quota, context, cache), the title for where you are.
+
+# --- Weekly quota, last segment: "+6% = 27% / 1wd1h"
+# The 5h segment answers "can I keep going right now"; this one answers the
+# slower question — am I going to run out of week before the week runs out.
+# Three numbers, in the order you actually ask them:
+#   +6%   pace, in percentage POINTS off a straight line: elapsed% − used%.
+#         Positive = consumed less than the clock, i.e. points of slack in hand;
+#         negative = burning ahead of the week. Points, not a ratio, because
+#         over a whole week the linear budget is the mental model people
+#         actually use ("it's Thursday, I should be ~80% in").
+#   27%   quota left in the 7-day window (the absolute figure)
+#   1wd1h WORKING time until the window resets — weekends excluded, see below
+# Deliberately NOT the ratio-with-bands used for the 5h arrow: on a 7-day window
+# a ratio is wildly unstable in the first hours (tiny elapsed => huge ratio) and
+# numb at the end, whereas the point-difference stays readable throughout.
+if [ -n "$week" ]; then
+  wleft=$(printf '%.0f' "$(echo "100 - $week" | bc -l)")
+  wleft_str="${wleft}%"
+  if [ "$wleft" -lt 5 ]; then
+    wleft_str="${RED}${wleft_str}${RESET}"
+  elif [ "$wleft" -lt 15 ]; then
+    wleft_str="${ORANGE}${wleft_str}${RESET}"
+  fi
+
+  wpace=""
+  wdur=""
+  if [ -n "$week_reset" ] && [ "$week_reset" -gt 0 ] 2>/dev/null; then
+    now=$(date +%s)
+    wdiff=$((week_reset - now))
+    if [ "$wdiff" -gt 0 ]; then
+      # BOTH the pace and the time-left are measured in WORKING time: Saturday
+      # and Sunday are subtracted from the window, from the time elapsed and
+      # from the time remaining, because a weekend burns none of the quota.
+      # Straight calendar time lied in both directions — it called you "behind"
+      # all Friday when the two days you supposedly had left were days you would
+      # not work, and it flattered you on Monday by counting a weekend you had
+      # already skipped. "1wd1h" on a Thursday night is a number you can act on;
+      # "3d1h" is not, because two of those days aren't yours.
+      #
+      # Local weekday without strftime (macOS awk has none): 1970-01-01 was a
+      # Thursday, so for local day index D, dow = (D+4) % 7 with 0=Sun, 6=Sat.
+      # The UTC offset comes from date(1) once. A DST shift inside the window
+      # skews this by an hour — irrelevant against a 5-day budget.
+      off=$(date +%z | awk '{ s=(substr($0,1,1)=="-")?-1:1;
+        print s*(substr($0,2,2)*3600 + substr($0,4,2)*60) }')
+      # One awk pass yields both numbers: "<work_seconds_left> <pace_points>".
+      wcalc=$(awk -v u="$week" -v now="$now" -v r="$week_reset" -v off="$off" '
+        # seconds in [a,b) that fall on a weekday, walked one local day at a time
+        function work(a, b,   s, d, dow, ds, de, x, y) {
+          if (b <= a) return 0;
+          s = 0; d = int((a + off) / 86400);
+          while (d * 86400 - off < b) {
+            dow = (d + 4) % 7;
+            if (dow != 0 && dow != 6) {
+              ds = d * 86400 - off; de = ds + 86400;
+              x = (a > ds) ? a : ds; y = (b < de) ? b : de;
+              if (y > x) s += y - x;
+            }
+            d++;
+          }
+          return s;
+        }
+        BEGIN{
+          ws = r - 604800; if (now < ws) now = ws;
+          wt = work(ws, r); wl = work(now, r);
+          # wt==0 is unreachable for a 7-day window (it always holds 5 weekdays),
+          # but fall back to calendar time rather than divide by zero.
+          e = (wt > 0) ? (wt - wl) / wt * 100 : (604800 - (r - now)) / 604800 * 100;
+          if (e < 0) e = 0; if (e > 100) e = 100;
+          printf "%d %.0f", wl, e - u;
+        }')
+      wsecs=${wcalc%% *}
+      delta=${wcalc##* }
+      # Time left as "1wd1h" -- mixed units rather than a decimal day, because
+      # "1.1d" needs mental arithmetic to become an hour you can plan around.
+      # The unit is "wd" (WORKING days), not "d": these are weekday-only seconds,
+      # and a bare "d" invites reading them as calendar days -- the exact
+      # confusion this segment exists to remove.
+      # A zero tail is dropped ("3wd", not "3wd0h"); under a day it degrades to
+      # "5h", then "45m". Across the weekend this legitimately reads "0m":
+      # there is no working time left before the reset, which is the point.
+      wdur=$(awk -v d="$wsecs" 'BEGIN{
+        dd=int(d/86400); hh=int((d%86400)/3600);
+        if (dd>0)      printf (hh>0 ? "%dwd%dh" : "%dwd"), dd, hh;
+        else if (hh>0) printf "%dh", hh;
+        else           printf "%dm", int(d/60) }')
+      # Signed percentage rather than an arrow glyph: the pace sits right next to
+      # the "% left" figure, and two numbers in the same unit compare instantly
+      # ("28% left, but 18% behind") where a "%" next to a "↓18" invites reading
+      # the second one as a different kind of quantity.
+      case "$delta" in
+        -*) wtxt="-${delta#-}%"
+            if [ "${delta#-}" -ge 10 ]; then wcol="$RED"; else wcol="$ORANGE"; fi ;;
+        0)  wtxt="0%"; wcol="" ;;
+        *)  wtxt="+${delta}%"; wcol="$GREEN" ;;
+      esac
+      if [ -n "$wcol" ]; then
+        wpace="${wcol}${wtxt}${RESET}"
+      else
+        wpace="$wtxt"
+      fi
+    fi
+  fi
+  # Pace LEADS the absolute figure, same reasoning as the 5h arrow: the signed
+  # number is the "am I OK?" glance, the "% left" is the detail you read second.
+  # The "=" between them is a reading aid, not arithmetic: without it "-18% 28%"
+  # is two bare percentages jammed together with nothing saying they are
+  # different quantities. It makes the pair scan as one statement -- "18% behind,
+  # which leaves 27%" -- for the price of one cell.
+  if [ -n "$wpace" ]; then
+    week_seg="${wpace} = ${wleft_str}"
+  else
+    week_seg="$wleft_str"
+  fi
+  [ -n "$wdur" ] && week_seg="${week_seg} / ${wdur}"
+  out="$out | $week_seg"
+fi
+
+# --- Resolve the context counter's placeholder, now that the cache state is known.
+# Three reasons the number stops being calm blue, in priority order:
+#   1. the cached prefix has EXPIRED           -> red pulse
+#   2. it is about to expire                   -> orange pulse
+#   3. the context is simply enormous (>300K)  -> red pulse
+# (1) and (2) also pulse the "N ago" clock, and the pair is the whole point: the
+# clock says how long the cache has left, the token count says how much it is
+# worth. Watching either alone tells you half of "is idling here about to cost
+# me a dollar" — so they light up together, in the same colour, on the same beat.
+# (3) is the standalone case: an oversized context is expensive to carry whether
+# or not it is cached, and it means compaction is coming.
+if [ -n "$abs_label" ]; then
+  # TTL phase only counts while IDLE. While the agent is working it is hitting
+  # the cache every few seconds, so the prefix is warm by definition and the
+  # "time since the last turn" clock says nothing about it — pulsing off a stale
+  # age there would fire the warning during exactly the period when there is
+  # nothing to warn about.
+  ctx_phase=none
+  [ "${idle:-0}" = "1" ] && ctx_phase=$(cache_phase "${age_secs:-}")
+  case "$ctx_phase" in
+    expired)  ctx_render=$(pulse red "$abs_label") ;;
+    expiring) ctx_render=$(pulse orange "$abs_label") ;;
+    *)
+      if [ "${used_tokens:-0}" -gt 300000 ] 2>/dev/null; then
+        ctx_render=$(pulse red "$abs_label")
+      else
+        ctx_render="${BLUE}${abs_label}${RESET}"
+      fi
+      ;;
+  esac
+  # Plain shell substitution, not sed: $ctx_render is full of ESC and & bytes
+  # that sed's replacement syntax would mangle.
+  out="${out%%@@CTX@@*}${ctx_render}${out#*@@CTX@@}"
+fi
+
+echo "$out"
