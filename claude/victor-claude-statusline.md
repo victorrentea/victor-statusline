@@ -166,6 +166,27 @@ faster or slower than the clock:
 Bands are reciprocal-symmetric (1.5 ↔ 0.67, 1.15 ↔ 0.87) so surplus and deficit
 are treated evenly. No arrow means you're on track.
 
+### The grey `?` — an unconfirmed reading, `78%?`
+
+`rate_limits` is a per-process cache, so a figure can be badly out of date
+(*Cross-terminal quota state*, below). When no terminal on the machine has seen
+the 5h numbers **change** for `CLAUDE_QUOTA_STALE_SECS` (default 900 s), the
+segment drops to `78%?` in grey and **the arrow is withdrawn**.
+
+The arrow has to be the first thing to go, and that is the whole point of the
+marker. It is computed from quota-left over time-left, so a reading frozen early
+in the window scores an enormous surplus and paints a confident green `↑` — the
+bar's single most reassuring glyph — at exactly the moment it knows least. The
+failure this fixes read `↑78% left / 19m` while the account was at 100 % used:
+not a wrong number politely displayed, but a wrong number **endorsed**. You
+cannot have 78 % of a 5-hour budget left with 19 minutes to go unless you have
+barely worked, and the bar was asserting both at once.
+
+A stale figure is still the best one available, so it is still shown. What it
+loses is the right to be believed. `< 15%` orange and `< 5%` red still apply on
+top — a reading that says you are nearly out is safe to act on even when old;
+one that says you have plenty is not.
+
 **Quick mental check:** convert time-left to a percentage with
 `minutes_left / 300 × 100`, then compare to `% left`. If they're within ~13% of
 each other, you're on-par (blank). E.g. `4:47h` = 287 min → 96% time left;
@@ -662,25 +683,47 @@ numbers, which is why two terminals openly disagree about how much quota is left
 `~/.claude/hooks/quota-state.sh` fixes this with a machine-wide `~/.claude/quota.json`
 that every status line writes (~1×/sec) and reads back, for **both** windows:
 
-- **Merge rule without clocks.** The readings carry no age, so freshness can't be
-  compared directly. But within a window `used` only ever *increases* (quota is
-  consumed, never returned), and across windows `resets_at` increases — so
-  comparing `(resets_at, used)` lexicographically *is* a total "which reading is
-  newer" order. A reading that loses is simply discarded.
+- **Value order, as the tie-break.** Within a window `used` only ever *increases*
+  (quota is consumed, never returned), and across windows `resets_at` increases —
+  so comparing `(resets_at, used)` lexicographically *is* a total "which reading is
+  newer" order for any two readings of the same account state.
+- **…but value order alone cannot self-correct, and that was a real bug.** It is
+  monotone by construction, so a reading that is *wrong but ahead* — one whose
+  `resets_at` sits a few minutes past the true window boundary — can never be
+  outranked by an honest one, and it pins **both** numbers (the percentage *and*
+  the countdown) for every terminal on the machine for the rest of the window.
+  Observed in the wild as `↑78% left / 19m` while the account was actually at
+  100 % used with 14 min to go — and, because `quota-gate.sh` gates on the same
+  value, no terminal parked either.
+- **So a reading now carries when it was seen live.** `measured_at` is *not* the
+  file's write time; it is the moment some terminal watched these numbers
+  **change**. Only the status line can tell: it sees the payload twice, so
+  `rate_limits` differing from what that session published on the previous render
+  means a new API response landed in between. Identical bytes mean a frozen cache
+  re-read, which is evidence of nothing. Under-reporting freshness is the safe
+  direction — it can only make the bar admit doubt it need not have.
+- **Freshness outranks value.** A reading a caller just saw arrive beats a stored
+  one that nobody has re-confirmed in `CLAUDE_QUOTA_STALE_SECS` (default 900 s).
+  That clause is the *only* way a wrong-but-ahead value ever walks back down.
+  15 min: long enough that a quiet machine doesn't flap (nobody working means
+  nobody burning, so an old reading is still a correct one), short enough that a
+  window can't run to its end on a number seen once at the start.
 - **Self-healing instead of locking.** Every terminal writes unlocked, so two
-  writers can interleave and lose an update — but the merge is monotone and re-runs
-  a second later, so a lost update heals itself. A lock would cost more than the
-  race does.
+  writers can interleave and lose an update — but the merge is monotone-or-fresher
+  and re-runs a second later, so a lost update heals itself. A lock would cost more
+  than the race does.
 - **Never blanks out knowledge.** A non-numeric or absent new reading always loses
   the merge, so a terminal that has not yet seen a single header cannot wipe what
   the others already know.
-- The merged value is shown **unmarked** — which terminal measured it is
-  bookkeeping, not worth spending a glyph on.
-- `quota-state.sh read` still emits only the two `five_hour` fields (the sibling
-  `quota-gate.sh` parses it with `${x%% *}`/`${x##* }` and parks a terminal on the
-  5h window alone); the weekly pair is a separate `read7` subcommand. Extending an
-  output that others parse positionally is exactly where a "harmless" change breaks
-  a consumer.
+- The merged value is shown **unmarked while it is fresh** — which terminal
+  measured it stays bookkeeping, not worth a glyph. How *old* it is, is not: see
+  the grey `?` in §2.
+- `quota-state.sh read` emits `used resets_at measured_at` for the 5h window (the
+  sibling `quota-gate.sh` consumes all three); the weekly triple is a separate
+  `read7`. It is parsed with `cut -d' ' -f<n>`, **not** `${x%% *}`/`${x##* }` —
+  when the output grew a third field the suffix-strip form silently started
+  returning `measured_at` where `resets_at` was meant. Extending an output that
+  others parse positionally is exactly where a "harmless" change breaks a consumer.
 
 ### Context-aware idle warning
 - The "N ago" clock and the context counter are coloured against **the session's
@@ -748,6 +791,19 @@ To reproduce this exact status line: save the script below to `~/.claude/statusl
 # change, not a follow-up.
 input=$(cat)
 session_id=$(echo "$input" | jq -r '.session_id // empty')
+# --- Diagnostic hatch, off unless ~/.claude/statusline-debug exists ---------
+# Records what each terminal was HANDED and what it RENDERED, one line per
+# render. Off by default (one stat(2) per render); `touch` the flag file to arm.
+# Worth keeping wired in rather than re-adding ad hoc: every quota bug in this
+# bar has been a disagreement between terminals, and the only way to see one is
+# to watch all of them at the same instant — which is unreproducible after the
+# fact, because the evidence is overwritten by the next window.
+if [ -f "$HOME/.claude/statusline-debug" ]; then
+  echo "$input" | jq -c --arg t "$(date +%s)" \
+    '{t:$t,sid:(.session_id//""|.[0:8]),rl:.rate_limits}' \
+    >> "$HOME/.claude/statusline-debug.log" 2>/dev/null
+fi
+# ---------------------------------------------------------------------------
 model=$(echo "$input" | jq -r '.model.display_name // "Claude"' | sed 's/ context)/)/')
 effort=$(echo "$input" | jq -r '.effort.level // empty')
 if [ -n "$effort" ]; then
@@ -779,24 +835,47 @@ week_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
 # last API response. A terminal that has been idle keeps showing frozen numbers,
 # which is why two terminals disagree about how much quota is left. Merge with
 # the machine-wide file so every terminal displays the freshest reading any of
-# them has seen. The merged value is shown unmarked: which terminal measured it
-# is bookkeeping, not something worth spending a glyph on.
+# them has seen. Which terminal measured it stays bookkeeping -- not worth a
+# glyph -- but HOW OLD the reading is is not, see the "?" below.
+#
+# Freshness is something only this script can report, because only it sees the
+# payload twice: if `rate_limits` differs from what this session published on the
+# previous render, a new API response landed in between and the numbers are being
+# observed live. If it is byte-identical, we are re-reading a frozen cache and
+# must not let it pass for evidence. (Under-reporting freshness is the safe
+# direction: it can only make the bar admit doubt it need not have.)
+rl_now="${five:-} ${reset:-0} ${week:-} ${week_reset:-0}"
+rl_seen="/tmp/claude-statusline-rl-${session_id:-default}.txt"
+fresh=0
+if [ -n "$five" ]; then
+  [ "$(cat "$rl_seen" 2>/dev/null)" = "$rl_now" ] || fresh=1
+  [ "$fresh" = 1 ] && printf '%s' "$rl_now" > "$rl_seen"
+fi
 merged=$("$HOME/.claude/hooks/quota-state.sh" publish \
-  "${five:-}" "${reset:-0}" "${week:-}" "${week_reset:-0}" 2>/dev/null)
+  "${five:-}" "${reset:-0}" "${week:-}" "${week_reset:-0}" "$fresh" 2>/dev/null)
+five_age=""
 if [ -n "$merged" ]; then
   m_five=$(printf '%s' "$merged" | cut -d' ' -f1)
   m_reset=$(printf '%s' "$merged" | cut -d' ' -f2)
   m_week=$(printf '%s' "$merged" | cut -d' ' -f3)
   m_week_reset=$(printf '%s' "$merged" | cut -d' ' -f4)
+  m_meas=$(printf '%s' "$merged" | cut -d' ' -f5)
   if [ "$m_five" != "-1" ]; then
     five=$m_five
     reset=$m_reset
+    case "$m_meas" in ''|*[!0-9]*|0) five_age=999999 ;;
+      *) five_age=$(( $(date +%s) - m_meas )); [ "$five_age" -lt 0 ] && five_age=0 ;;
+    esac
   fi
   if [ -n "$m_week" ] && [ "$m_week" != "-1" ]; then
     week=$m_week
     week_reset=$m_week_reset
   fi
 fi
+# Past this, no terminal on the machine has re-confirmed the 5h figure and it is
+# no longer a fact, only the last thing anybody saw. It is still the best number
+# available -- so it is shown, but marked (see $STALE_5H use below).
+STALE_5H="${CLAUDE_QUOTA_STALE_SECS:-900}"
 
 ESC=$(printf '\033')
 RESET="${ESC}[0m"
@@ -808,6 +887,9 @@ GREEN="${ESC}[38;5;78m"
 # 80 (#5fd7d7) is the closest 256-colour match, so the folder name in the status
 # line reads as part of that same frame. Bump to 73/79/116 to taste.
 TEAL="${ESC}[38;5;80m"
+# Grey is the "do not act on this" colour: it says the figure is present but
+# unverified, without borrowing the meaning of orange/red (which mean "low").
+GREY="${ESC}[38;5;244m"
 
 # --- Slow pulse -------------------------------------------------------------
 # Breathes a background from BLACK up to full hue and back, one frame per render
@@ -937,7 +1019,21 @@ if [ -n "$five" ]; then
   # part you read at a glance without parsing digits, and in a left-to-right line
   # the glance lands on the first glyph of the segment — so the trend gets that
   # slot and the exact figure follows for when you actually care.
-  pct_part="${ind}${left}%"
+  #
+  # Unless nobody has re-confirmed the reading in $STALE_5H, in which case both
+  # of those glyphs are withdrawn and a grey "?" takes their place. The arrow is
+  # the part that has to go FIRST: it is computed from quota-left over
+  # time-left, so a reading frozen early in the window scores a huge surplus and
+  # paints a confident green "↑" — the bar's single most reassuring glyph — at
+  # precisely the moment it knows least. "↑78% left / 19m" was that failure: not
+  # a wrong number politely displayed, but a wrong number ENDORSED. A stale
+  # figure is still the best one available and is still shown; what it loses is
+  # the right to be believed.
+  if [ -n "$five_age" ] && [ "$five_age" -gt "$STALE_5H" ] 2>/dev/null; then
+    pct_part="${GREY}${left}%?${RESET}"
+  else
+    pct_part="${ind}${left}%"
+  fi
   # "↗98% left / 4:47h": quota-left and time-left are two readings of the SAME
   # window, joined with "/" rather than the "•" it replaces; "|" stays reserved
   # for segment boundaries, so the eye still parses where the segment ends.
@@ -1553,6 +1649,11 @@ if [ -n "$abs_label" ]; then
   out="${out%%@@CTX@@*}${ctx_render}${out#*@@CTX@@}"
 fi
 
+if [ -f "$HOME/.claude/statusline-debug" ]; then
+  printf '%s OUT %s %s\n' "$(date +%s)" "${session_id%%-*}" \
+    "$(printf '%s' "$out" | sed 's/\x1b\[[0-9;]*m//g')" \
+    >> "$HOME/.claude/statusline-debug.log" 2>/dev/null
+fi
 echo "$out"
 ```
 
