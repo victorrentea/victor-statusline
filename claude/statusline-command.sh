@@ -659,11 +659,18 @@ if [ -n "$spend_ready" ]; then
     # centres it on the math axis and it visibly sags below the baseline next to
     # ✳/✻/✽ — one frame of the bloom dropping half a pixel-row. Five frames that
     # sit still beat six that twitch.
-    case $((now % 8)) in
+    #
+    # "$" is the ninth frame, treated as just another bloom in the cycle: since
+    # the flower is standing in for the currency sign anyway, letting the real
+    # "$" surface once per cycle re-states what the glyph is replacing — the
+    # units flash back for a beat and the animation stays honest about the slot
+    # it occupies. Single cell like the rest, so the width still never moves.
+    case $((now % 9)) in
       0) flower="·" ;;
       1|7) flower="✢" ;;
       2|6) flower="✳" ;;
       3|5) flower="✻" ;;
+      8) flower="$" ;;
       *) flower="✽" ;;
     esac
     # The flower stands in for the "$". No cost yet on this turn => print no
@@ -692,7 +699,24 @@ if [ -n "$spend_ready" ]; then
   # left is not a single member of the total but a *portion* of it — the same
   # kind of quantity, a piece of the same money.
   sep="⊂"
-  total_money=$(awk -v c="$cost" 'BEGIN{printf "$%d", int(c)}')
+  # The total is always TRUNCATED, never rounded — it may not claim money that
+  # has not been spent, and it should only ever tick upward. What changes with
+  # size is the RESOLUTION: one decimal below $10, whole dollars from $10 up.
+  #
+  # A flat int() was the earlier rule and it broke the "⊂" relation on its own
+  # terms: a 30-cent session rendered "✻0.3 ⊂ $0" — a subset visibly LARGER than
+  # the set containing it, i.e. the one reading the separator exists to prevent.
+  # Truncating to the dollar is right at $25.40, where the cents are below the
+  # resolution of any decision it feeds; at $0.34 that same truncation eats the
+  # entire number. The decimal also matches the turn figure sitting next to it,
+  # so the pair is directly comparable instead of being two different roundings.
+  #
+  # The +1e-9 is not cosmetic: 0.3*10 is 2.9999999999999996 in binary floating
+  # point, so a bare int() would print "$0.2" for thirty cents — the same
+  # understatement being fixed here, one decimal place down. Below $10 the widest
+  # output is "$9.9", so the segment never grows past the 5 cells int() used.
+  total_money=$(awk -v c="$cost" \
+    'BEGIN{ if (c >= 10) printf "$%d", int(c); else printf "$%.1f", int(c*10 + 1e-9)/10 }')
   if [ -n "$turn_money" ]; then
     spend_seg="${turn_money}${cache_bang}${turn_suffix} ${sep} ${total_money}"
   else

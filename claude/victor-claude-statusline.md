@@ -207,10 +207,22 @@ then the **session total**.
 | *(or)* *nothing* | right after Enter, before this turn has billed: **no figure at all**, just the bare flower |
 | `(cache miss)` | red — this turn **missed the prompt cache** (see §3.1) |
 | `⊂` | subset: the turn's spend is *contained in* the session's (see below) |
-| `$25` | session total, **integer-truncated** (`int($)`), authoritative |
+| `$25` | session total, **truncated** — one decimal under `$10` (`$0.3`), whole dollars from `$10` up |
 
 Turn cost is rounded to **one decimal**: at this granularity the second decimal
 was noise you never acted on, and dropping it keeps the segment narrow.
+
+**The total is truncated, never rounded, and its resolution follows its size.**
+Truncation is the rule because the figure must not claim money that hasn't been
+spent, and because it should only ever tick *upward*. The resolution shifts at
+`$10`: below it one decimal, above it whole dollars, since `$25.40`'s cents are
+beneath the resolution of any decision the number feeds. A flat `int()` was the
+earlier rule and it broke the `⊂` relation on its own terms — a 30-cent session
+rendered `✻0.3 ⊂ $0`, a subset visibly *larger* than the set containing it,
+which is precisely the misreading the separator exists to prevent. The decimal
+also matches the turn figure beside it, so the two are directly comparable
+instead of being two different roundings of the same money. The widest form
+below `$10` is `$9.9` — same five cells `int()` occupied, so nothing shifts.
 
 **The flower replaces the `$`, not the separator.** The currency sign is the one
 cell in the segment carrying no information — you know the units — which makes it
@@ -235,8 +247,11 @@ quantity, a piece of the same money.
 
 - **Session total** (`$25`) comes straight from `.cost.total_cost_usd`, which is
   authoritative and matches `/usage` "Total cost" (includes subagents). It's a
-  running session total, printed as `int(cost)` — so any session under `$1`
-  shows `$0` even though it's non-zero.
+  running session total, truncated to one decimal below `$10` and to `int(cost)`
+  from `$10` up. The `+1e-9` in that truncation isn't cosmetic: `0.3*10` is
+  `2.9999999999999996` in binary floating point, so a bare `int()` would print
+  `$0.2` for thirty cents — the same understatement the decimal was added to fix,
+  one place further down.
 - **Current/last-turn cost** — the transcript stores **no** per-message cost
   (`costUSD` is `null`), so it can't be read directly. It's the **delta** of the
   session total since the current turn began. A per-session state file at
@@ -270,10 +285,16 @@ quantity, a piece of the same money.
   **no `current` word**: a glyph that visibly moves already says "in progress",
   and it says it in one cell instead of eight. The frames are Claude Code's own
   spinner — `·` `✢` `✳` `✻` `✽` (U+00B7, U+2722, U+2733, U+273B, U+273D) —
-  ping-ponged over an 8-step cycle keyed off `now % 8`, so the flower blooms and
+  ping-ponged over a 9-step cycle keyed off `now % 9`, so the flower blooms and
   closes in sync with the "Working…" spinner above the prompt. Every glyph is
   single-cell, so the line never shifts width; `refreshInterval: 1` is what
   advances the frame, so the animation adds zero extra work per render.
+
+  **The ninth frame is a literal `$`.** Since the flower is standing in for the
+  currency sign, letting the real one surface once per cycle re-states what the
+  glyph is replacing: the units flash back for a beat, and the animation stays
+  honest about the slot it occupies. Single-cell like the rest, so the width
+  still never moves.
 
   **Dropped on purpose: `∗` (U+2217).** Claude Code's spinner includes it, but
   it is a *math operator* while the rest are *Dingbats* — the font centres it on
@@ -741,7 +762,7 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
 
 ### Cheap shell/rendering touches
 - **Free animation off the refresh clock:** the "billing" flower animates
-  (`·` `✢` `✳` `✻` `✽`, ping-ponged) by deriving its frame from `now % 8` — a
+  (`·` `✢` `✳` `✻` `✽` plus a `$` beat, ping-ponged) by deriving its frame from `now % 9` — a
   wall-clock value the script already fetches — and letting `refreshInterval: 1`
   advance it. No timers, no background process, zero extra work per render. All
   five glyphs are **single cell** *and* share a baseline (see the `∗` note
@@ -1439,11 +1460,18 @@ if [ -n "$spend_ready" ]; then
     # centres it on the math axis and it visibly sags below the baseline next to
     # ✳/✻/✽ — one frame of the bloom dropping half a pixel-row. Five frames that
     # sit still beat six that twitch.
-    case $((now % 8)) in
+    #
+    # "$" is the ninth frame, treated as just another bloom in the cycle: since
+    # the flower is standing in for the currency sign anyway, letting the real
+    # "$" surface once per cycle re-states what the glyph is replacing — the
+    # units flash back for a beat and the animation stays honest about the slot
+    # it occupies. Single cell like the rest, so the width still never moves.
+    case $((now % 9)) in
       0) flower="·" ;;
       1|7) flower="✢" ;;
       2|6) flower="✳" ;;
       3|5) flower="✻" ;;
+      8) flower="$" ;;
       *) flower="✽" ;;
     esac
     # The flower stands in for the "$". No cost yet on this turn => print no
@@ -1472,7 +1500,24 @@ if [ -n "$spend_ready" ]; then
   # left is not a single member of the total but a *portion* of it — the same
   # kind of quantity, a piece of the same money.
   sep="⊂"
-  total_money=$(awk -v c="$cost" 'BEGIN{printf "$%d", int(c)}')
+  # The total is always TRUNCATED, never rounded — it may not claim money that
+  # has not been spent, and it should only ever tick upward. What changes with
+  # size is the RESOLUTION: one decimal below $10, whole dollars from $10 up.
+  #
+  # A flat int() was the earlier rule and it broke the "⊂" relation on its own
+  # terms: a 30-cent session rendered "✻0.3 ⊂ $0" — a subset visibly LARGER than
+  # the set containing it, i.e. the one reading the separator exists to prevent.
+  # Truncating to the dollar is right at $25.40, where the cents are below the
+  # resolution of any decision it feeds; at $0.34 that same truncation eats the
+  # entire number. The decimal also matches the turn figure sitting next to it,
+  # so the pair is directly comparable instead of being two different roundings.
+  #
+  # The +1e-9 is not cosmetic: 0.3*10 is 2.9999999999999996 in binary floating
+  # point, so a bare int() would print "$0.2" for thirty cents — the same
+  # understatement being fixed here, one decimal place down. Below $10 the widest
+  # output is "$9.9", so the segment never grows past the 5 cells int() used.
+  total_money=$(awk -v c="$cost" \
+    'BEGIN{ if (c >= 10) printf "$%d", int(c); else printf "$%.1f", int(c*10 + 1e-9)/10 }')
   if [ -n "$turn_money" ]; then
     spend_seg="${turn_money}${cache_bang}${turn_suffix} ${sep} ${total_money}"
   else
