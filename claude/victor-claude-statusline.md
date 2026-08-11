@@ -26,34 +26,38 @@ blooms `·` → `✢` → `✳` → `✻` → `✽` and closes again, one frame 
 same spinner Claude Code draws in front of "Working…"):
 
 ```
-Opus 4.8/xhigh 50K/1M | ↗98% left / 4:47h | ✻0.5 ⊂ $25 | +24% = 70% / 1d1h
+Opus 4.8/xhigh 50K/1M | ↗98% left / 4:47h • +24% = 70% / 1d1h | ai | ✻0.5 ⊂ $25
 ```
 
 Idle, waiting on you (note the ticking "N ago" clock and no flower):
 
 ```
-Opus 4.8/xhigh 50K/1M | 98% left / 4:47h | $0.1 3m ago ⊂ $25 | +24% = 70% / 1d1h
+Opus 4.8/xhigh 50K/1M | 98% left / 4:47h • +24% = 70% / 1d1h | ai | $0.1 3m ago ⊂ $25
 ```
 
 Just after you hit Enter, before the first response has billed anything — **no
 turn price at all**, only the animated flower:
 
 ```
-Opus 4.8/xhigh 50K/1M | 98% left / 4:47h | ✻ $25 | +24% = 70% / 1d1h
+Opus 4.8/xhigh 50K/1M | 98% left / 4:47h • +24% = 70% / 1d1h | ai | ✻ $25
 ```
 
-Four `|`-separated segments: **model/context**, **5h quota + burn-rate**,
-**spend**, **7-day quota**. There is **no leading emoji** on the model segment.
+Four `|`-separated segments: **model/context**, **quota** (5h + burn-rate, then
+the 7-day figure after a `•`), **location**, **spend**. There is **no leading
+emoji** on the model segment.
 
-**Where you are is not in the bar.** Folder, branch and worktree live in the
-**session title** one line above, on the prompt box border (§5) — printing them
-in both places spent columns on the screen's most static fact twice over. The
-bar is for what changes; the title for where you are.
+**The two quota horizons share one segment.** They answer the same question —
+"how much room do I have" — over different windows, so they are joined by a soft
+`•` rather than sitting at opposite ends of the bar with spend wedged between
+them. Read as one unit, `98% left / 4:47h • +24% = 70% / 1d1h` is a single
+now-vs-week sentence.
 
-**`|` is reserved for segment boundaries — nothing else uses it.** Inside a
-segment, two readings of the same window are joined with `/` (`↗98% left / 4:47h`,
-`+24% = 70% / 1d1h`), which also buys back a couple of columns per join versus
-the `•` it replaced.
+**Spend goes last** because it is the widest segment and the least urgent: when
+the terminal is narrow it is the right thing to lose off the right edge first.
+
+**`|` separates segments; `•` joins two readings that belong together; `/` joins
+two readings of the *same* window** (`↗98% left / 4:47h`, `+24% = 70% / 1d1h`),
+which also buys back a couple of columns per join.
 
 ---
 
@@ -465,9 +469,11 @@ post-mortem** ("you just did").
 
 ## 4. Weekly quota — `+24% = 70% / 1d1h`
 
-The **last** segment, tracking the rolling **7-day** (604800s) rate-limit window.
-Segment 2 answers *"can I keep going right now"*; this one answers the slower
-question — *am I going to run out of week before the week runs out*.
+Rides in the **same segment** as the 5h figure, joined to it by a `•`, tracking
+the rolling **7-day** (604800s) rate-limit window. The 5h half answers *"can I
+keep going right now"*; this half answers the slower question — *am I going to
+run out of week before the week runs out*. They share a cell because you ask
+both questions in the same glance.
 
 | Piece | Meaning | Source |
 |-------|---------|--------|
@@ -560,12 +566,46 @@ number you see.
 
 ---
 
-## 5. The session title — `ai@fix-cache/kind-mendeleev-f33675`
+## 5. Location — `ai@fix-cache`
+
+Second-to-last segment: the **folder**, plus `@branch` when the branch is not the
+trunk. Painted **teal** (256-colour 80, `#5fd7d7`) — the closest match to the
+border Claude Code draws around the prompt, so the folder still reads as part of
+that frame even though it sits a line below it.
+
+| cwd | Segment |
+|-----|---------|
+| not a repo | `workspace` |
+| repo on `master`/`main` | `ai` |
+| repo off the trunk | `ai@fix-cache` |
+| detached HEAD | `ai` |
+| fresh `git init`, no commits yet | `ai@fix-cache` |
+
+- **Trunk branches are omitted**, same rule as the title (§6): `master`/`main` is
+  the default state, so naming it trains the eye to skip the field. No `@branch`
+  ⇒ you're on the trunk, and any `@something` you *do* see is worth reading.
+- **`git branch --show-current`, not `rev-parse --abbrev-ref HEAD`.** The latter
+  fails on an **unborn branch** — a `git init` before the first commit — which is
+  exactly when you most want to be told where you are.
+- **One git call per render, not two.** The bar re-renders at
+  `refreshInterval: 1`, so a subprocess here costs once a second, not once a
+  prompt. That is why this segment does *not* do the title's worktree resolution
+  (§6), which needs two more `rev-parse` calls; a worktree still shows its own
+  directory name, just without the `<main-repo>@<branch>/<worktree>` expansion.
+
+> **This currently duplicates the session title (§6)**, which also carries the
+> location. That is deliberate but temporary: it is the precondition for freeing
+> the title to hold Claude Code's own per-session names, which it only generates
+> when no custom title is set. Until `session-title.sh` stops emitting
+> `sessionTitle`, the location is on screen twice.
+
+---
+
+## 6. The session title — `ai@fix-cache/kind-mendeleev-f33675`
 
 Not part of the status line, but the other half of the same display: Claude Code
 draws a **session title** on the prompt box border, one line above the bar. It is
-set by a sibling hook, `~/.claude/hooks/session-title.sh`, and it exists so the
-bar doesn't have to carry the folder.
+set by a sibling hook, `~/.claude/hooks/session-title.sh`.
 
 It names **where the session is**, never what it is about:
 
@@ -579,7 +619,7 @@ It names **where the session is**, never what it is about:
 - **Trunk branches are omitted.** `master`/`main` is the default state, so naming
   it says nothing and trains the eye to skip the field — which is exactly when
   you'd miss the one time it said something else. No branch shown ⇒ you're on the
-  trunk. (Same rule the location segment used before it was removed.)
+  trunk. (Same rule the location segment in the bar uses — §5.)
 - **A worktree shows both repo and worktree.** A linked worktree's git-dir is
   `<main-repo>/.git/worktrees/<name>`, while `--git-common-dir` always points at
   the main repo. That pair lets the title say *which repo* **and** *which
@@ -780,17 +820,21 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   deficit are treated evenly; no arrow when on-track; arrow colored green/orange/red.
 - The whole spend segment is **suppressed** when the session total rounds to
   `$0.00`.
-- **`folder@branch` closes the line**, with the folder painted teal (256-colour
-  80, `#5fd7d7`) to match the border Claude Code draws around the prompt and the
-  session title it writes on that border — so the two read as one frame. A
-  leading `🌿 ` marks a **linked worktree** (git-dir under `.git/worktrees/<name>`);
-  it is *not* a separate segment, because the worktree name and the folder name
-  are the same string and printing it twice was pure noise.
+- **`folder@branch` is second-to-last, ahead of spend** (§5), painted teal
+  (256-colour 80, `#5fd7d7`) to match the border Claude Code draws around the
+  prompt and the session title it writes on that border — so the two read as one
+  frame. Spend closes the line instead: it is the widest segment and the least
+  urgent, so it is the right thing to lose off the right edge on a narrow
+  terminal.
 - **The branch is printed only when it is neither `master` nor `main`.** The
   trunk is the default state, so naming it says nothing; printing it on every
   render trains the eye to skip that part of the line — which is exactly when
   you'd miss the one time it mattered. Absence of `@branch` therefore *means*
   "on the trunk", and any `@something` you do see is worth reading.
+- **The spend segment is built early but emitted last.** It is computed next to
+  the prompt-cache forensics it derives from (§3.1) and appended after the
+  location, so the assembly order in the script is deliberately not the reading
+  order of the bar.
 
 ---
 
@@ -801,7 +845,13 @@ To reproduce this exact status line: save the script below to `~/.claude/statusl
 ```sh
 #!/bin/sh
 # Claude Code status line:
-#   "Model (ctx% of SIZE) | 5h% left | spend | folder[@branch] | 7d quota"
+#   "Model (ctx% of SIZE) | 5h% left • 7d quota | folder[@branch] | spend"
+#
+# The two quota figures are one thought ("how much room do I have, now and this
+# week"), so they share a cell separated by a soft • rather than sitting on
+# opposite ends of the bar with spend wedged between them. Location follows,
+# and spend goes last: it is the segment that grows widest and is least urgent,
+# so it is the right thing to lose first when the terminal is narrow.
 #
 # MAINTENANCE RULE: whenever this script changes (format, segments, colors,
 # thresholds, turn-state logic — anything that alters behaviour), update its
@@ -1527,17 +1577,11 @@ if [ -n "$spend_ready" ]; then
   fi
 fi
 
-if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
-  out="$out | $spend_seg"
-fi
+# $spend_seg is BUILT here but appended at the very END of the bar, below the
+# weekly-quota block. Computing it here keeps it next to the cache forensics it
+# is derived from; emitting it last is a layout decision (see the header).
 
-# NO location segment here — deliberately. "Which folder / which branch / which
-# worktree" now lives in the SESSION TITLE, drawn by ~/.claude/hooks/session-title.sh
-# on the prompt box border one line above this bar. Printing it in both places
-# spent columns on the screen's most static fact twice over; the status line is
-# for what CHANGES (spend, quota, context, cache), the title for where you are.
-
-# --- Weekly quota, last segment: "+6% = 27% / 1wd1h"
+# --- Weekly quota, joined onto the 5h cell with "•": "+6% = 27% / 1wd1h"
 # The 5h segment answers "can I keep going right now"; this one answers the
 # slower question — am I going to run out of week before the week runs out.
 # Three numbers, in the order you actually ask them:
@@ -1651,7 +1695,40 @@ if [ -n "$week" ]; then
     week_seg="$wleft_str"
   fi
   [ -n "$wdur" ] && week_seg="${week_seg} / ${wdur}"
-  out="$out | $week_seg"
+  # "•" and not "|": this rides in the SAME cell as the 5h figure. Both answer
+  # "how much room is left", only over different horizons, and reading them as
+  # one unit is what makes "96% left / 4:46h • +14% = 83% / 3wd11h" scan as a
+  # single now-vs-week sentence instead of two unrelated percentages.
+  out="$out • $week_seg"
+fi
+
+# --- Location: "folder" or "folder@branch" ----------------------------------
+# Back in the bar after living in the session title: the title is being freed
+# for Claude Code's own per-session names (it only auto-titles when no custom
+# title is set), and once it is no longer pinned to the location, the location
+# needs a home. TEAL is the deliberate choice — it is the closest 256-colour
+# match to the prompt-box border, so the folder still reads as part of that
+# frame even though it now sits a line below it.
+cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
+[ -n "$cwd" ] || cwd=$PWD
+loc=$(basename "$cwd")
+# ONE git call, not the two session-title.sh makes: this bar re-renders every
+# second, so a subprocess here is a per-second cost, not a per-prompt one.
+# --show-current and not `rev-parse --abbrev-ref HEAD`: the latter FAILS on an
+# unborn branch (a fresh `git init` before the first commit), which is exactly
+# when you most want to be told which branch you are on.
+# Trunk branches are omitted for the same reason as in the title — master/main
+# is the default state, so naming it trains the eye to skip the field.
+branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
+case "$branch" in
+  ''|master|main) ;;
+  *) loc="${loc}@${branch}" ;;
+esac
+[ -n "$loc" ] && out="$out | ${TEAL}${loc}${RESET}"
+
+# --- Spend, last (built far above, next to the cache forensics) -------------
+if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
+  out="$out | $spend_seg"
 fi
 
 # --- Resolve the context counter's placeholder, now that the cache state is known.
@@ -1705,7 +1782,7 @@ echo "$out"
 ## The title hook — `~/.claude/hooks/session-title.sh`
 
 Wired in `~/.claude/settings.json` on both `SessionStart` and `UserPromptSubmit`
-(see §5):
+(see §6):
 
 ```json
 "SessionStart":     [{"hooks": [{"type": "command", "command": "~/.claude/hooks/session-title.sh"}]}],
@@ -1737,7 +1814,7 @@ Wired in `~/.claude/settings.json` on both `SessionStart` and `UserPromptSubmit`
 #
 # NOTE — this deliberately keeps overriding the session title, which suppresses
 # Claude Code's own AI title (it only auto-titles a session when no custom title
-# is set). See ~/workspace/victor-statusline/claude/victor-claude-statusline.md §5
+# is set). See ~/workspace/victor-statusline/claude/victor-claude-statusline.md §6
 # (published at https://github.com/victorrentea/victor-statusline).
 #
 # Trunk branches are omitted on purpose: master/main is the default state, so
