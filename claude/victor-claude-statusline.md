@@ -42,8 +42,14 @@ turn price at all**, only the animated flower:
 Opus 5XH 50K/1M | 98% left / 4:47h | ✻ $25 | ai | +24% / 70% / 1d1h
 ```
 
-Idle long enough that the prompt cache is gone, on a context worth more than $2
-to rebuild — `220K`, `>1h` and `$2.1` **blink red** in unison, one second on, one
+Idle long enough that the prompt cache is gone. The loss is priced either way;
+what changes with the amount is whether it moves. Below $2 it just sits there:
+
+```
+Opus 5H 170K/1M | ↑87% left / 1:41h | $7.8 >1h ago (miss=$1.6) ⊂ $10 | ai | +15% / 82% / 3wd8h
+```
+
+Above $2, `220K`, `>1h` and `$2.1` **blink red** in unison, one second on, one
 second off (§1.1); everything else holds still:
 
 ```
@@ -130,17 +136,42 @@ Two deliberate choices:
   `miss=`) says how to read those two figures and holds still; blinking it too
   just widened the flashing block into a bar of moving text you had to wait out.
 
-### The gate is a dollar figure, not a token count
+### Reporting and alarming are two different thresholds
 
-The first two triggers stay silent unless losing the cache would cost more than
-**$2** (`CLAUDE_MISS_FLOOR` to change it). The gate used to be a flat 100K
-tokens, which is the wrong unit: what makes a miss worth interrupting you over is
-the **money**, and the same 100K is ~19c of Haiku and ~$1.90 of Opus on a 1h TTL.
-It is the *same* figure the bar is about to print, so the rule explains itself on
-screen — you read `(miss=$2.1)` and the reason it is blinking is the number
-itself, not a token count you would have to convert in your head.
+The **price is always reported**. Every expired or expiring cache prints its
+`(miss=$…)`, at any size, because that figure answers a question you may be
+asking on purpose — *what did stepping away just cost me?* — and a number
+withheld below an arbitrary line makes the bar useless for checking.
 
-Where the floor actually falls, per model (idle past the TTL, whole context):
+The **blink** is the part that is rationed: it only starts once losing the cache
+would cost more than **$2** (`CLAUDE_MISS_FLOOR` to change it). So a cheap miss
+sits there in plain text and a dear one starts moving:
+
+```
+… | $7.8 >1h ago (miss=$1.4) ⊂ $10 | …      ← states the loss, stays still
+… | $7.8 >1h ago (miss=$2.1) ⊂ $10 | …      ← ">1h" and "$2.1" blink red
+```
+
+The alarm threshold used to be a flat 100K tokens, which is the wrong unit: what
+makes a miss worth interrupting you over is the **money**, and the same 100K is
+~19c of Haiku and ~$1.90 of Opus on a 1h TTL. It is the *same* figure the bar is
+already printing, so the rule explains itself on screen — you see a blinking
+`(miss=$2.1)` beside a still `(miss=$1.4)` and the reason is the number itself,
+not a token count you would have to convert in your head.
+
+`cache_phase()` therefore knows nothing about money — it answers a pure question
+about *time*. Folding the threshold into it made the cheap case indistinguishable
+from "the prefix is fine", so the clock could not report a $1.40 miss it knew
+perfectly well had happened. Callers ask `cache_phase()` what the state is, then
+ask `miss_big()` whether to shout about it. The **context counter** asks both,
+which is why it can stay quietly blue while the clock beside it reports a
+sub-threshold loss.
+
+The one figure never printed is `$0.0`: below 5 cents it rounds to zero, and a
+price of zero says less than no price at all.
+
+Where the blink threshold actually falls, per model (idle past the TTL, whole
+context) — below these the price is still printed, just calmly:
 
 | Model | 5m TTL (×1.15) | 1h TTL (×1.90) |
 |-------|----------------|----------------|
@@ -149,9 +180,10 @@ Where the floor actually falls, per model (idle past the TTL, whole context):
 | Sonnet ($3) | ~580K | ~351K |
 | Haiku ($1) | never (1M caps out at $1.15) | ~1.05M — never |
 
-Haiku never blinking is the rule working, not a bug: a rebuilt Haiku prefix
-costs less than a dollar even at a full 1M window, and there is no decision to
-interrupt for. A bar that blinks during cheap sessions is a bar you stop reading.
+Haiku never blinking is the rule working, not a bug: a rebuilt Haiku prefix costs
+less than a dollar even at a full 1M window, so there is no decision to interrupt
+for — and the price is on screen anyway if you want to look. A bar that blinks
+during cheap sessions is a bar you stop reading.
 
 Implementation note: the counter is emitted into the segment as a literal
 `@@CTX@@` placeholder and substituted at the very end of the script, because
@@ -444,15 +476,18 @@ Tail deltas are ignored; a genuine mid-session switch still lands immediately,
 because once the session drops to 5-minute caching the next big write goes into
 the 5 m bucket and wins on its own.
 
-That number then drives the **`N ago` clock's colour** (still only when the
-rebuild would cost more than **$2** — see §1.1):
+That number then drives the **`N ago` clock** (the price is always stated; the
+blink only above **$2** — see §1.1):
 
 | Age since the last turn | Rendering | Meaning |
 |-------------------------|-----------|---------|
-| `< 0.8 × TTL` | plain | prefix is warm |
-| `0.8 × TTL … TTL` | **orange blink**, `48m ago <= 1h (miss=$2.1)` | last chance — send now and you still pay 0.1× |
-| `≥ TTL` | **red blink**, `51m ago > 5m (miss=$2.1)` | prefix is gone; your next message rebuilds it at the write price |
-| `≥ 1 h` | **red blink**, `>1h ago (miss=$2.1)` | as above, and the exact age no longer matters |
+| `< 0.8 × TTL` | plain, `12m ago` | prefix is warm — no price, nothing at stake |
+| `0.8 × TTL … TTL` | orange, `48m ago <= 1h (miss=$2.1)` | last chance — send now and you still pay 0.1× |
+| `≥ TTL` | red, `51m ago > 5m (miss=$2.1)` | prefix is gone; your next message rebuilds it at the write price |
+| `≥ 1 h` | red, `>1h ago (miss=$2.1)` | as above, and the exact age no longer matters |
+
+The colour **blinks** on/off in the bottom three rows only when the price clears
+$2; below that the same text is rendered once, in the terminal's normal colour.
 
 **The clock states its own verdict.** `51m ago` is a number with no conclusion
 attached — the reader has to remember what the TTL is and do the comparison. So
@@ -851,12 +886,15 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
 ### Context-aware idle warning
 - The "N ago" clock and the context counter are coloured against **the session's
   real prompt-cache TTL** (read off `cache_creation.ephemeral_{5m,1h}_input_tokens`,
-  see §3.1) via one shared `cache_phase()` predicate: an orange blink in the last
-  20 % before it, red once past it — and *only* when the uncached re-send would
-  cost more than **$2**, the same figure the bar then prints as `(miss=$2.1)`.
-  Gating on the money rather than on a token count means the threshold means the
-  same thing on Haiku as on Opus, and the reason for the alarm is legible in the
-  alarm itself.
+  see §3.1) via one shared `cache_phase()` predicate: orange in the last 20 %
+  before it, red once past it. That predicate is deliberately **money-blind** — it
+  answers a question about time only — and a second predicate, `miss_big()`,
+  decides whether the state is worth *blinking* about (uncached re-send > **$2**,
+  the same figure the bar prints as `(miss=$2.1)`). Splitting them is what lets
+  the clock report a cheap miss in plain text instead of having to choose between
+  shouting and staying silent; gating the alarm on money rather than tokens means
+  the threshold means the same thing on Haiku as on Opus, and the reason for the
+  alarm is legible in the alarm itself.
 - The cached-transcript file is versioned in its **name**
   (`claude-statusline-cache-v2-<id>.txt`). It's keyed on the transcript's mtime
   alone, so when the cached line gained three fields, an old five-field line
@@ -1229,22 +1267,22 @@ abbr_tok() {
 }
 
 # Format seconds-since-the-turn-ended as " <rel> ago" (leading space included):
-#   <60s -> "Ns" (ticks 1s,2s,3s...), <60m -> "Nm", <24h -> "Nh", else "Nd".
+#   <60s -> "Ns" (ticks 1s,2s,3s...), <60m -> "Nm", else ">1h".
 # Colored against the ACTUAL prompt-cache TTL of this session ($ttl_secs, read
 # off the API usage — 300s or 3600s, see below), not a hardcoded 5 minutes:
 #   orange in the last 20% before the TTL (spend it or lose it),
 #   red once the TTL has passed (the prefix is gone; your next message pays the
 #   full 1.25x cache-WRITE price again instead of the 0.1x read price).
 # Concretely, on a 5-minute TTL: "4m ago" is >= 240s and still under 300s, so it
-# breathes ORANGE — the prefix is alive and you have about a minute to use it.
-# "51m ago" is far past 300s, so it breathes RED — that cache is already gone.
+# goes ORANGE — the prefix is alive and you have about a minute to use it.
+# "51m ago" is far past 300s, so it goes RED — that cache is already gone.
 # On a 1-hour TTL the same two readings say the opposite thing: "4m ago" is not
 # coloured at all, and "51m ago" is the orange one (48m is 80% of 60m) with red
 # only from 60m on. Which is exactly why the TTL is detected rather than assumed
 # — the same "51m ago" is a shrug or an emergency depending on it.
-# Only when the context is big (>=100K tokens) — below that the re-send isn't
-# expensive enough to warn about. Uses globals $used_tokens/$ttl_secs/colors.
-# Echoes nothing for empty/invalid input.
+# The colour BLINKS only above $MISS_FLOOR; below it the same verdict, price and
+# all, is rendered once in the normal colour (see the report-vs-alarm note below).
+# Uses globals $used_tokens/$ttl_secs/colors. Echoes nothing for invalid input.
 fmt_age() {
   _secs=$1
   case "$_secs" in ''|*[!0-9]*) return 0 ;; esac
@@ -1277,6 +1315,14 @@ fmt_age() {
   # until it was a bar of moving text you had to wait out to read. Held steady,
   # they stay legible during the off-beat and the eye lands straight on whichever
   # of the two numbers it came for.
+  #
+  # REPORTING and ALARMING are two different thresholds. The price is stated for
+  # every expired cache, however small, because it is the answer to a question you
+  # may be asking on purpose ("what did stepping away just cost me?") and a number
+  # withheld below an arbitrary line is a bar you cannot use to check. The BLINK is
+  # reserved for the ones worth interrupting you over ($MISS_FLOOR). So a cheap
+  # miss prints "51m ago > 5m (miss=$1.4)" in plain text and stays out of the way,
+  # and only a dear one starts moving.
   _phase=$(cache_phase "$_secs")
   case "$_phase" in
     expired)  _hue=red ;;
@@ -1288,8 +1334,17 @@ fmt_age() {
   if [ "$_rel" != ">1h" ]; then
     if [ "$_phase" = expired ]; then _cmp=" > $(fmt_ttl)"; else _cmp=" <= $(fmt_ttl)"; fi
   fi
-  printf ' %s ago%s (miss=%s)' \
-    "$(pulse "$_hue" "$_rel")" "$_cmp" "$(pulse "$_hue" "$(miss_cost)")"
+  # One floor is not a policy choice but arithmetic: below 5 cents the figure
+  # rounds to "$0.0", and printing a price of zero says less than printing nothing.
+  _price=$(miss_cost)
+  if [ "$_price" = '$0.0' ]; then
+    printf ' %s ago%s' "$_rel" "$_cmp"
+  elif miss_big; then
+    printf ' %s ago%s (miss=%s)' \
+      "$(pulse "$_hue" "$_rel")" "$_cmp" "$(pulse "$_hue" "$_price")"
+  else
+    printf ' %s ago%s (miss=%s)' "$_rel" "$_cmp" "$_price"
+  fi
 }
 
 # The TTL as the reader thinks of it, not in seconds.
@@ -1316,15 +1371,14 @@ fmt_ttl() {
 # the context has grown past it, so charging today's size to yesterday's miss
 # would overstate it.
 #
-# Shown from the moment the blink starts (orange, still savable) as well as past
-# the TTL, and never below $MISS_FLOOR (cache_phase gates on exactly this figure),
-# so it never appears next to a sum too small to act on. Naming the price while
-# the prefix is still alive is the whole point of the orange phase: "4m ago <= 1h"
-# is a deadline with no stake attached, and a deadline you cannot price is one you
-# cannot decide about.
+# Shown from the moment the cache is at risk (orange, still savable) as well as
+# past the TTL, at any size. Naming the price while the prefix is still alive is
+# the whole point of the orange phase: "4m ago <= 1h" is a deadline with no stake
+# attached, and a deadline you cannot price is one you cannot decide about.
 #
 # miss_usd is the raw number for arithmetic, miss_cost the same figure formatted
-# for the bar. Split because the threshold test and the display must be the same
+# for the bar, miss_big the blink threshold as a true/false. All three off one
+# expression, because the threshold test and the displayed price must be the same
 # quantity — a gate computed one way and a price printed another is how you get a
 # bar that blinks while showing a number below its own stated floor.
 miss_usd() {
@@ -1337,6 +1391,18 @@ miss_cost() {
   awk -v c="$(miss_usd "$1")" \
     'BEGIN{ printf (c >= 10 ? "$%.0f" : "$%.1f"), c }'
 }
+# Is the loss big enough to MOVE for? The gate used to be a flat 100K tokens,
+# which is the wrong unit: what makes a miss worth interrupting you over is the
+# MONEY, and the same 100K is ~19c of Haiku and ~$1.90 of Opus-on-a-1h-TTL.
+# Testing the dollar figure the bar is about to print also makes the rule
+# self-evident on screen — you see "(miss=$2.1)" blinking next to a "(miss=$1.4)"
+# that does not, and the reason is the number itself, not a token count you would
+# have to convert. Raise the floor if the bar still interrupts too eagerly:
+#   export CLAUDE_MISS_FLOOR=5
+MISS_FLOOR="${CLAUDE_MISS_FLOOR:-2}"
+miss_big() {
+  awk -v c="$(miss_usd "$1")" -v f="$MISS_FLOOR" 'BEGIN{ exit !(c > f) }'
+}
 
 # Which side of the prompt-cache TTL is this idle gap on? The single source of
 # truth for both things that react to it — the "N ago" clock and the context
@@ -1345,20 +1411,15 @@ miss_cost() {
 #              something NOW and you keep paying 0.1x
 #   expired  = past the TTL: the prefix is gone, the next message rebuilds it at
 #              1.25x
-# Silent unless losing the cache would cost more than $MISS_FLOOR. The gate used
-# to be a flat 100K tokens, which is the wrong unit: what makes a miss worth
-# interrupting you over is the MONEY, and the same 100K is ~19c of Haiku and
-# ~$1.90 of Opus-on-a-1h-TTL. Gating on the dollar figure the bar is about to
-# print also makes the rule self-evident on screen — you see "(miss=$2.1)" and
-# the reason it is blinking is the number itself, not a token count you would
-# have to convert. Raise the floor if the bar still interrupts too eagerly:
-#   export CLAUDE_MISS_FLOOR=5
-MISS_FLOOR="${CLAUDE_MISS_FLOOR:-2}"
+# Purely a question about TIME. It deliberately does NOT know about $MISS_FLOOR:
+# what the cache is doing and whether that is worth an alarm are two separate
+# facts, and folding the money into this predicate made the cheap case
+# indistinguishable from "the prefix is fine" — so the clock could not report a
+# $1.40 miss it knew perfectly well had happened. Callers ask this what the state
+# is, then ask miss_big whether to shout about it.
 cache_phase() {
   _s=$1
   case "$_s" in ''|*[!0-9]*) echo none; return ;; esac
-  awk -v c="$(miss_usd)" -v f="$MISS_FLOOR" 'BEGIN{ exit !(c > f) }' \
-    || { echo none; return; }
   _t=${ttl_secs:-300}
   if [ "$_s" -ge "$_t" ]; then echo expired
   elif [ "$_s" -ge $((_t * 4 / 5)) ]; then echo expiring
@@ -1859,33 +1920,40 @@ esac
 
 # --- Resolve the context counter's placeholder, now that the cache state is known.
 # Three reasons the number stops being calm blue, in priority order:
-#   1. the cached prefix has EXPIRED           -> red pulse
-#   2. it is about to expire                   -> orange pulse
-#   3. the context is simply enormous (>300K)  -> static red
-# (1) and (2) also pulse the "N ago" clock, and the pair is the whole point: the
+#   1. the cached prefix has EXPIRED, dearly    -> red blink
+#   2. it is about to expire, dearly            -> orange blink
+#   3. the context is simply enormous (>300K)   -> static red
+# (1) and (2) also blink the "N ago" clock, and the pair is the whole point: the
 # clock says how long the cache has left, the token count says how much it is
 # worth. Watching either alone tells you half of "is idling here about to cost
 # me a dollar" — so they light up together, in the same colour, on the same beat.
 # (3) is the standalone case: an oversized context is expensive to carry whether
 # or not it is cached, and it means compaction is coming.
+#
+# "Dearly" is miss_big, and it is asked HERE rather than inside cache_phase so
+# the clock can still report a sub-threshold miss in plain text while this
+# counter stays quietly blue. The alarm and the report have different floors on
+# purpose; only the alarm is shared.
 if [ -n "$abs_label" ]; then
   # TTL phase only counts while IDLE. While the agent is working it is hitting
   # the cache every few seconds, so the prefix is warm by definition and the
-  # "time since the last turn" clock says nothing about it — pulsing off a stale
+  # "time since the last turn" clock says nothing about it — blinking off a stale
   # age there would fire the warning during exactly the period when there is
   # nothing to warn about.
   ctx_phase=none
-  [ "${idle:-0}" = "1" ] && ctx_phase=$(cache_phase "${age_secs:-}")
+  if [ "${idle:-0}" = "1" ] && miss_big; then
+    ctx_phase=$(cache_phase "${age_secs:-}")
+  fi
   case "$ctx_phase" in
     expired)  ctx_render=$(pulse red "$abs_label") ;;
     expiring) ctx_render=$(pulse orange "$abs_label") ;;
     *)
       if [ "${used_tokens:-0}" -gt 300000 ] 2>/dev/null; then
-        # Static red, NOT a pulse: an oversized context is a standing fact, not
-        # an event. The breathing background is reserved for the cache-TTL cases
-        # above, which are time-critical and only fire while idle — letting the
-        # size rule pulse too meant a 380K session washed red for the whole turn,
-        # which is exactly when there is nothing you can do about it.
+        # Static red, NOT a blink: an oversized context is a standing fact, not
+        # an event. The blink is reserved for the cache-TTL cases above, which
+        # are time-critical and only fire while idle — letting the size rule
+        # blink too meant a 380K session flashing red for the whole turn, which
+        # is exactly when there is nothing you can do about it.
         ctx_render="${RED}${abs_label}${RESET}"
       else
         ctx_render="${BLUE}${abs_label}${RESET}"
