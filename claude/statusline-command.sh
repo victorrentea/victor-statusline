@@ -1,6 +1,12 @@
 #!/bin/sh
 # Claude Code status line:
-#   "Model (ctx% of SIZE) | 5h% left | spend | folder[@branch] | 7d quota"
+#   "Model/E (ctx% of SIZE) | 5h% left | spend | folder[@branch] | 7d quota"
+#
+# Ordered by how fast each figure moves: the model line is fixed, the 5h window
+# and the spend change within a turn, the folder changes when you cd, and the
+# weekly figure barely moves at all — so the eye can stop scanning left-to-right
+# as soon as it has what it came for, and the most static segment is the one
+# that falls off the right edge first on a narrow terminal.
 #
 # MAINTENANCE RULE: whenever this script changes (format, segments, colors,
 # thresholds, turn-state logic — anything that alters behaviour), update its
@@ -26,10 +32,30 @@ fi
 # ---------------------------------------------------------------------------
 model=$(echo "$input" | jq -r '.model.display_name // "Claude"' | sed 's/ context)/)/')
 effort=$(echo "$input" | jq -r '.effort.level // empty')
+# Abbreviated to its initial(s). The effort level is a mode you set and then
+# rarely change, so the bar only has to CONFIRM it, not teach it — and one
+# letter buys back three or four columns on the most-read part of the line.
+# "max" is MAX and not M, deliberately: M is medium, and a silent collision
+# between the cheapest and the most expensive setting is the one abbreviation
+# that must never happen. An unrecognised level prints raw rather than being
+# guessed at — a new level is worth reading in full the first time you meet it.
+case "$effort" in
+  low)    effort=L ;;
+  medium) effort=M ;;
+  high)   effort=H ;;
+  xhigh)  effort=XH ;;
+  max)    effort=MAX ;;
+esac
+# Glued straight onto the name, no separator: "Opus 5H", not "Opus 5/H". The
+# slash was doing the work of a delimiter in a place that has no ambiguity to
+# resolve — the effort is always a trailing capital or two, and the model name
+# never ends in one — so it only added a stroke of visual noise to the very first
+# thing the eye lands on. Model and effort are also one thought ("which brain, at
+# what setting"), and the separator kept splitting them into two.
 if [ -n "$effort" ]; then
   case "$model" in
-    *" ("*) model="${model%% (*}/${effort} (${model#* (}" ;;
-    *)      model="${model}/${effort}" ;;
+    *" ("*) model="${model%% (*}${effort} (${model#* (}" ;;
+    *)      model="${model}${effort}" ;;
   esac
 fi
 # Input $/MTok for the model in play, so the cache-miss figure below is this
@@ -111,40 +137,32 @@ TEAL="${ESC}[38;5;80m"
 # unverified, without borrowing the meaning of orange/red (which mean "low").
 GREY="${ESC}[38;5;244m"
 
-# --- Slow pulse -------------------------------------------------------------
-# Breathes a background from BLACK up to full hue and back, one frame per render
-# (refreshInterval 1 => 1 fps, a 6-second cycle). One frame a second is the whole
-# budget: the point is that something in the corner of your eye keeps moving, and
-# movement registers at 1fps just as well as at 10 — while a fast blink is an
-# alarm you learn to tune out within a day. Six steps also means no frame is far
-# from its neighbour, so it reads as a fade rather than a strobe.
+# --- Blink ------------------------------------------------------------------
+# Two states, one second apart (refreshInterval 1): the FOREGROUND is either the
+# warning hue or the terminal's normal colour. Nothing in between.
 #
-# Both ramps start at 16 (true black) and stay on ONE hue the whole way up. The
-# earlier ramps opened on 52/58 — a dark red and, worse, a dark olive that reads
-# as green on most terminal themes, so the "warning" wash spent two of its six
-# frames looking like a success colour. A pulse whose colour changes meaning
-# mid-cycle communicates nothing; black->red is a single unambiguous statement,
-# and black->amber likewise.
-#
-# Background rather than foreground because the thing being flagged is a NUMBER
-# you still have to read: recolouring the glyphs fights legibility exactly when
-# you most need the digits, whereas a wash behind them leaves them intact.
-# Bright white text is pinned on top so contrast holds at every step of the ramp.
+# This replaces a six-step background ramp that breathed from black up to full
+# hue and back. The ramp had the failure mode of all gradients used as alarms:
+# adjacent frames differ so little that the movement only registers if you are
+# already looking at it, which is precisely the case where you did not need to be
+# told. Two states are unmissable in peripheral vision, which is the only place
+# this warning is ever actually seen. Losing the background also gives the digits
+# back the terminal's own contrast instead of white-on-dark-red.
 #
 #   pulse red|orange <text>
-RED_RAMP="16 52 88 124 88 52"
-ORANGE_RAMP="16 94 130 166 130 94"
 pulse() {
   _hue=$1; shift
   case "$_hue" in
-    red) _ramp=$RED_RAMP ;;
-    *)   _ramp=$ORANGE_RAMP ;;
+    red) _col=$RED ;;
+    *)   _col=$ORANGE ;;
   esac
-  # $now is the render's wall clock; the same second gives the same frame
-  # everywhere in the bar, so context and clock breathe in unison.
-  _frame=$(( ${now:-$(date +%s)} % 6 + 1 ))
-  _bg=$(echo "$_ramp" | cut -d' ' -f"$_frame")
-  printf '%s[48;5;%sm%s[38;5;231m%s%s' "$ESC" "$_bg" "$ESC" "$*" "$RESET"
+  # $now is the render's wall clock; the same second gives the same phase
+  # everywhere in the bar, so context and clock blink in unison.
+  if [ $(( ${now:-$(date +%s)} % 2 )) -eq 0 ]; then
+    printf '%s%s%s' "$_col" "$*" "$RESET"
+  else
+    printf '%s' "$*"
+  fi
 }
 
 if [ -n "$ctx" ]; then
@@ -321,28 +339,45 @@ fmt_age() {
   _mins=$((_secs / 60))
   if [ "$_mins" -lt 1 ]; then
     _rel="${_secs}s"
-  elif [ "$_mins" -lt 120 ]; then
-    # Minutes up to TWO hours, not one. The hour bucket used to start at 60m,
-    # which made 65m render as "1h" — and next to a 1h TTL that prints the
-    # nonsense "1h ago > 1h", a comparison that looks false while being true.
-    # Minutes stay unambiguous through the whole range where the 1h cache is
-    # the thing being decided about.
+  elif [ "$_mins" -lt 60 ]; then
+    # Minutes stay unrounded through the whole first hour — that is the range
+    # where the 1h cache is still the thing being decided about, and where the
+    # difference between 41m and 58m is the difference between "later" and "now".
     _rel="${_mins}m"
   else
-    _h=$((_mins / 60))
-    if [ "$_h" -lt 24 ]; then _rel="${_h}h"; else _rel="$((_h / 24))d"; fi
+    # Past an hour every cache is gone and the reading stops being actionable:
+    # 2h, 16h and 3d all mean the same single thing — you are rebuilding from
+    # scratch — so they collapse into one glyph-cheap ">1h" rather than three
+    # buckets that invite you to compare numbers that no longer differ in
+    # consequence. It also reads as its own verdict, which is why the "> TTL"
+    # comparison below is dropped in this case: ">1h ago > 1h" is noise.
+    _rel=">1h"
   fi
-  _age="${_rel} ago"
-  # Say WHY it is pulsing, in the two terms the reader would otherwise have to
-  # supply from memory: the idle time and the TTL it is being measured against.
-  # "51m ago" alone is a number with no verdict attached — "51m ago > 5m" is the
-  # verdict, and it is also the one form that survives the TTL being 1h instead
-  # of 5m without silently changing meaning.
-  case "$(cache_phase "$_secs")" in
-    expired)   _age=$(pulse red "$_age > $(fmt_ttl) (miss=$(miss_cost))") ;;
-    expiring)  _age=$(pulse orange "$_age <= $(fmt_ttl)") ;;
+  # Say WHY it is blinking, in the terms the reader would otherwise have to
+  # supply from memory: the idle time, the TTL it is measured against, and what
+  # crossing it costs. "51m ago" alone is a number with no verdict attached —
+  # "51m ago > 5m (miss=$1.7)" is the verdict, and it is also the one form that
+  # survives the TTL being 1h instead of 5m without silently changing meaning.
+  #
+  # Only the two VARIABLES blink — the elapsed time and the price. The words
+  # around them ("ago", "> 5m", "miss=") are fixed scaffolding that says how to
+  # read those two figures, and blinking them too just widened the flashing block
+  # until it was a bar of moving text you had to wait out to read. Held steady,
+  # they stay legible during the off-beat and the eye lands straight on whichever
+  # of the two numbers it came for.
+  _phase=$(cache_phase "$_secs")
+  case "$_phase" in
+    expired)  _hue=red ;;
+    expiring) _hue=orange ;;
+    *)        printf ' %s ago' "$_rel"; return 0 ;;
   esac
-  printf ' %s' "$_age"
+  # ">1h" is already its own verdict, so it does not also get compared to the TTL.
+  _cmp=""
+  if [ "$_rel" != ">1h" ]; then
+    if [ "$_phase" = expired ]; then _cmp=" > $(fmt_ttl)"; else _cmp=" <= $(fmt_ttl)"; fi
+  fi
+  printf ' %s ago%s (miss=%s)' \
+    "$(pulse "$_hue" "$_rel")" "$_cmp" "$(pulse "$_hue" "$(miss_cost)")"
 }
 
 # The TTL as the reader thinks of it, not in seconds.
@@ -361,13 +396,34 @@ fmt_ttl() {
 # The 1h cache costs nearly twice as much to lose as the 5m one, which is the
 # opposite of the intuition that a longer TTL is strictly the safer setting —
 # reason enough to print the number rather than leave it to be guessed at.
-# Only shown past the TTL, and only above 100K tokens (cache_phase already
-# gates on that), so it never appears next to a sum too small to act on.
-miss_cost() {
+# Takes the prefix size in tokens, defaulting to the whole current context. The
+# argument exists because the two callers price two different things: the idle
+# clock is forecasting the loss of the context you are sitting on RIGHT NOW,
+# while the "(cache miss)" verdict is pricing a rebuild that ALREADY happened,
+# whose size is the prompt that was cached at the time ($prev_prompt) — by then
+# the context has grown past it, so charging today's size to yesterday's miss
+# would overstate it.
+#
+# Shown from the moment the blink starts (orange, still savable) as well as past
+# the TTL, and never below $MISS_FLOOR (cache_phase gates on exactly this figure),
+# so it never appears next to a sum too small to act on. Naming the price while
+# the prefix is still alive is the whole point of the orange phase: "4m ago <= 1h"
+# is a deadline with no stake attached, and a deadline you cannot price is one you
+# cannot decide about.
+#
+# miss_usd is the raw number for arithmetic, miss_cost the same figure formatted
+# for the bar. Split because the threshold test and the display must be the same
+# quantity — a gate computed one way and a price printed another is how you get a
+# bar that blinks while showing a number below its own stated floor.
+miss_usd() {
   _mult=1.15
   [ "${ttl_secs:-300}" -ge 3600 ] && _mult=1.9
-  awk -v t="${used_tokens:-0}" -v r="${in_rate:-5}" -v m="$_mult" \
-    'BEGIN{ c = t/1000000 * r * m; printf (c >= 10 ? "$%.0f" : "$%.1f"), c }'
+  awk -v t="${1:-${used_tokens:-0}}" -v r="${in_rate:-5}" -v m="$_mult" \
+    'BEGIN{ printf "%.4f", t/1000000 * r * m }'
+}
+miss_cost() {
+  awk -v c="$(miss_usd "$1")" \
+    'BEGIN{ printf (c >= 10 ? "$%.0f" : "$%.1f"), c }'
 }
 
 # Which side of the prompt-cache TTL is this idle gap on? The single source of
@@ -377,12 +433,20 @@ miss_cost() {
 #              something NOW and you keep paying 0.1x
 #   expired  = past the TTL: the prefix is gone, the next message rebuilds it at
 #              1.25x
-# Silent below 100K tokens: there the rebuild is too cheap to interrupt anyone
-# over, and a bar that pulses during trivial sessions is a bar you stop reading.
+# Silent unless losing the cache would cost more than $MISS_FLOOR. The gate used
+# to be a flat 100K tokens, which is the wrong unit: what makes a miss worth
+# interrupting you over is the MONEY, and the same 100K is ~19c of Haiku and
+# ~$1.90 of Opus-on-a-1h-TTL. Gating on the dollar figure the bar is about to
+# print also makes the rule self-evident on screen — you see "(miss=$2.1)" and
+# the reason it is blinking is the number itself, not a token count you would
+# have to convert. Raise the floor if the bar still interrupts too eagerly:
+#   export CLAUDE_MISS_FLOOR=5
+MISS_FLOOR="${CLAUDE_MISS_FLOOR:-2}"
 cache_phase() {
   _s=$1
   case "$_s" in ''|*[!0-9]*) echo none; return ;; esac
-  [ "${used_tokens:-0}" -ge 100000 ] 2>/dev/null || { echo none; return; }
+  awk -v c="$(miss_usd)" -v f="$MISS_FLOOR" 'BEGIN{ exit !(c > f) }' \
+    || { echo none; return; }
   _t=${ttl_secs:-300}
   if [ "$_s" -ge "$_t" ]; then echo expired
   elif [ "$_s" -ge $((_t * 4 / 5)) ]; then echo expiring
@@ -614,7 +678,12 @@ if [ -n "$spend_ready" ]; then
   cache_bang=""
   if [ "$turn_cache_read" -ge 0 ] && [ "$prev_prompt" -ge 5000 ] \
      && [ "$turn_cache_read" -lt $((prev_prompt / 2)) ]; then
-    cache_bang="${RED} (cache miss)${RESET}"
+    # With the price attached, not just the fact. The turn cost sits immediately
+    # to its left, so a bare "(cache miss)" makes you do the subtraction yourself
+    # to find out whether the miss was most of that figure or a rounding error on
+    # it — and the two cases call for completely different reactions. Priced off
+    # $prev_prompt, the prefix that actually had to be rebuilt.
+    cache_bang="${RED} ($(miss_cost "$prev_prompt") cache miss)${RESET}"
   fi
   hookstate="/tmp/claude-turn-${session_id:-default}.state"
   if [ -f "$hookstate" ]; then
@@ -730,13 +799,7 @@ if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
   out="$out | $spend_seg"
 fi
 
-# NO location segment here — deliberately. "Which folder / which branch / which
-# worktree" now lives in the SESSION TITLE, drawn by ~/.claude/hooks/session-title.sh
-# on the prompt box border one line above this bar. Printing it in both places
-# spent columns on the screen's most static fact twice over; the status line is
-# for what CHANGES (spend, quota, context, cache), the title for where you are.
-
-# --- Weekly quota, last segment: "+6% = 27% / 1wd1h"
+# --- Weekly quota, last cell of the bar: "+6% / 27% / 1wd1h"
 # The 5h segment answers "can I keep going right now"; this one answers the
 # slower question — am I going to run out of week before the week runs out.
 # Three numbers, in the order you actually ask them:
@@ -840,18 +903,47 @@ if [ -n "$week" ]; then
   fi
   # Pace LEADS the absolute figure, same reasoning as the 5h arrow: the signed
   # number is the "am I OK?" glance, the "% left" is the detail you read second.
-  # The "=" between them is a reading aid, not arithmetic: without it "-18% 28%"
-  # is two bare percentages jammed together with nothing saying they are
-  # different quantities. It makes the pair scan as one statement -- "18% behind,
-  # which leaves 27%" -- for the price of one cell.
+  # "/" and not "=": this segment is three readings of ONE window -- pace, what
+  # is left, how long it runs -- and "/" is already the separator that means
+  # exactly that everywhere else in this bar ("96% left / 4:44h"). An "=" read
+  # as arithmetic that does not hold; one separator, used consistently, does
+  # the same job of saying "these are different quantities" for the same cell.
   if [ -n "$wpace" ]; then
-    week_seg="${wpace} = ${wleft_str}"
+    week_seg="${wpace} / ${wleft_str}"
   else
     week_seg="$wleft_str"
   fi
   [ -n "$wdur" ] && week_seg="${week_seg} / ${wdur}"
-  out="$out | $week_seg"
 fi
+# $week_seg is BUILT here, next to the arithmetic that produces it, but APPENDED
+# below the location segment — this is the last cell of the bar.
+
+# --- Location: "folder" or "folder@branch" ----------------------------------
+# Back in the bar after living in the session title: the title is being freed
+# for Claude Code's own per-session names (it only auto-titles when no custom
+# title is set), and once it is no longer pinned to the location, the location
+# needs a home. TEAL is the deliberate choice — it is the closest 256-colour
+# match to the prompt-box border, so the folder still reads as part of that
+# frame even though it now sits a line below it.
+cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
+[ -n "$cwd" ] || cwd=$PWD
+loc=$(basename "$cwd")
+# ONE git call, not the two session-title.sh makes: this bar re-renders every
+# second, so a subprocess here is a per-second cost, not a per-prompt one.
+# --show-current and not `rev-parse --abbrev-ref HEAD`: the latter FAILS on an
+# unborn branch (a fresh `git init` before the first commit), which is exactly
+# when you most want to be told which branch you are on.
+# Trunk branches are omitted for the same reason as in the title — master/main
+# is the default state, so naming it trains the eye to skip the field.
+branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
+case "$branch" in
+  ''|master|main) ;;
+  *) loc="${loc}@${branch}" ;;
+esac
+[ -n "$loc" ] && out="$out | ${TEAL}${loc}${RESET}"
+
+# --- Weekly quota, last cell (built above, next to its arithmetic) ----------
+[ -n "$week_seg" ] && out="$out | $week_seg"
 
 # --- Resolve the context counter's placeholder, now that the cache state is known.
 # Three reasons the number stops being calm blue, in priority order:
