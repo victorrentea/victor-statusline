@@ -26,47 +26,45 @@ blooms `·` → `✢` → `✳` → `✻` → `✽` and closes again, one frame 
 same spinner Claude Code draws in front of "Working…"):
 
 ```
-Opus 4.8/xhigh 50K/1M | ↗98% left / 4:47h • +24% = 70% / 1d1h | ai | ✻0.5 ⊂ $25
+Opus 4.8/XH 50K/1M | ↗98% left / 4:47h | ✻0.5 ⊂ $25 | ai | +24% / 70% / 1d1h
 ```
 
 Idle, waiting on you (note the ticking "N ago" clock and no flower):
 
 ```
-Opus 4.8/xhigh 50K/1M | 98% left / 4:47h • +24% = 70% / 1d1h | ai | $0.1 3m ago ⊂ $25
+Opus 4.8/XH 50K/1M | 98% left / 4:47h | $0.1 3m ago ⊂ $25 | ai | +24% / 70% / 1d1h
 ```
 
 Just after you hit Enter, before the first response has billed anything — **no
 turn price at all**, only the animated flower:
 
 ```
-Opus 4.8/xhigh 50K/1M | 98% left / 4:47h • +24% = 70% / 1d1h | ai | ✻ $25
+Opus 4.8/XH 50K/1M | 98% left / 4:47h | ✻ $25 | ai | +24% / 70% / 1d1h
 ```
 
-Four `|`-separated segments: **model/context**, **quota** (5h + burn-rate, then
-the 7-day figure after a `•`), **location**, **spend**. There is **no leading
-emoji** on the model segment.
+Five `|`-separated segments: **model/effort/context**, **5h quota + burn-rate**,
+**spend**, **location**, **7-day quota**. There is **no leading emoji** on the
+model segment.
 
-**The two quota horizons share one segment.** They answer the same question —
-"how much room do I have" — over different windows, so they are joined by a soft
-`•` rather than sitting at opposite ends of the bar with spend wedged between
-them. Read as one unit, `98% left / 4:47h • +24% = 70% / 1d1h` is a single
-now-vs-week sentence.
+**The order is by how fast each figure moves.** The model line is fixed; the 5h
+window and the spend move within a single turn; the folder changes when you
+`cd`; the weekly figure barely moves at all. Reading left-to-right you can stop
+as soon as you have what you came for — and the most static segment is the one
+that falls off the right edge first on a narrow terminal.
 
-**Spend goes last** because it is the widest segment and the least urgent: when
-the terminal is narrow it is the right thing to lose off the right edge first.
-
-**`|` separates segments; `•` joins two readings that belong together; `/` joins
-two readings of the *same* window** (`↗98% left / 4:47h`, `+24% = 70% / 1d1h`),
-which also buys back a couple of columns per join.
+**`|` separates segments; `/` joins readings of the *same* window** — the 5h
+pair `↗98% left / 4:47h`, and the weekly triple `+24% / 70% / 1d1h` (pace, then
+what's left, then how long the window has to run). It also buys back a couple of
+columns per join versus a wordier separator.
 
 ---
 
-## 1. Model & context — `Opus 4.8/xhigh 50K/1M`
+## 1. Model & context — `Opus 4.8/XH 50K/1M`
 
 | Piece | Meaning | Source (stdin JSON) |
 |-------|---------|---------------------|
 | `Opus 4.8` | model display name (with ` context)` trimmed to `)`) | `.model.display_name` |
-| `/xhigh` | reasoning effort level, spliced in before any `(size)` | `.effort.level` |
+| `/XH` | reasoning effort, abbreviated (`L`/`M`/`H`/`XH`/`MAX`), spliced in before any `(size)` | `.effort.level` |
 | `50K` | absolute context tokens used (blue) = `used% × size` | `.context_window.used_percentage` × size |
 | `/1M` | context window size | model's `(1M)` suffix, else `.context_window.context_window_size` |
 
@@ -317,7 +315,7 @@ just-hit-Enter window deliberately shows nothing instead.
 ## 3.1 Prompt-cache miss — the red `(cache miss)`
 
 ```
-Opus 4.8/xhigh 200K/1M | 98% left / 4:47h | ✻1.2 (cache miss) ⊂ $30 | +24% = 70% / 1d1h
+Opus 4.8/XH 200K/1M | 98% left / 4:47h | ✻1.2 (cache miss) ⊂ $30 | ai | +24% / 70% / 1d1h
 ```
 
 A red `(cache miss)` right after the turn price means **this turn did not reuse
@@ -467,18 +465,24 @@ post-mortem** ("you just did").
 
 ---
 
-## 4. Weekly quota — `+24% = 70% / 1d1h`
+## 4. Weekly quota — `+24% / 70% / 1d1h`
 
-Rides in the **same segment** as the 5h figure, joined to it by a `•`, tracking
-the rolling **7-day** (604800s) rate-limit window. The 5h half answers *"can I
-keep going right now"*; this half answers the slower question — *am I going to
-run out of week before the week runs out*. They share a cell because you ask
-both questions in the same glance.
+The **last** segment, tracking the rolling **7-day** (604800s) rate-limit window.
+Segment 2 answers *"can I keep going right now"*; this one answers the slower
+question — *am I going to run out of week before the week runs out*. It sits at
+the far end because it is the slowest-moving figure on the bar: you consult it
+once in a while, not every turn.
+
+Three readings of the one window, `/`-separated in the order you ask them: the
+**pace**, then **what's left**, then **how long the window has to run**. `/` is
+the same separator the 5h pair uses (`98% left / 4:47h`) and means the same
+thing here — one window, several readings. It replaced an `=`, which invited
+being read as arithmetic that doesn't hold.
 
 | Piece | Meaning | Source |
 |-------|---------|--------|
 | `+24%` | pace: **percentage points** off a straight line, `elapsed% − used%` | derived |
-| `=` | reading aid separating the two percentages (see below) | — |
+| `/` | separator: three readings of one window (see below) | — |
 | `70%` | quota remaining this week = `100 − used%` | `.rate_limits.seven_day.used_percentage` |
 | `1d1h` | **working** time until the weekly window resets (weekends excluded) | `.rate_limits.seven_day.resets_at` |
 
@@ -820,12 +824,15 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   deficit are treated evenly; no arrow when on-track; arrow colored green/orange/red.
 - The whole spend segment is **suppressed** when the session total rounds to
   `$0.00`.
-- **`folder@branch` is second-to-last, ahead of spend** (§5), painted teal
-  (256-colour 80, `#5fd7d7`) to match the border Claude Code draws around the
-  prompt and the session title it writes on that border — so the two read as one
-  frame. Spend closes the line instead: it is the widest segment and the least
-  urgent, so it is the right thing to lose off the right edge on a narrow
-  terminal.
+- **`folder@branch` is second-to-last, between spend and the weekly quota** (§5),
+  painted teal (256-colour 80, `#5fd7d7`) to match the border Claude Code draws
+  around the prompt and the session title it writes on that border — so the two
+  read as one frame.
+- **The effort level is abbreviated to its initial(s)** — `L` / `M` / `H` / `XH`
+  / `MAX`. It is a mode you set and rarely change, so the bar only has to
+  *confirm* it. `max` is `MAX` and not `M` on purpose: `M` is `medium`, and a
+  silent collision between the cheapest and the most expensive setting is the one
+  abbreviation that must never happen. An unrecognised level prints raw.
 - **The branch is printed only when it is neither `master` nor `main`.** The
   trunk is the default state, so naming it says nothing; printing it on every
   render trains the eye to skip that part of the line — which is exactly when
@@ -845,13 +852,13 @@ To reproduce this exact status line: save the script below to `~/.claude/statusl
 ```sh
 #!/bin/sh
 # Claude Code status line:
-#   "Model (ctx% of SIZE) | 5h% left • 7d quota | folder[@branch] | spend"
+#   "Model/E (ctx% of SIZE) | 5h% left | spend | folder[@branch] | 7d quota"
 #
-# The two quota figures are one thought ("how much room do I have, now and this
-# week"), so they share a cell separated by a soft • rather than sitting on
-# opposite ends of the bar with spend wedged between them. Location follows,
-# and spend goes last: it is the segment that grows widest and is least urgent,
-# so it is the right thing to lose first when the terminal is narrow.
+# Ordered by how fast each figure moves: the model line is fixed, the 5h window
+# and the spend change within a turn, the folder changes when you cd, and the
+# weekly figure barely moves at all — so the eye can stop scanning left-to-right
+# as soon as it has what it came for, and the most static segment is the one
+# that falls off the right edge first on a narrow terminal.
 #
 # MAINTENANCE RULE: whenever this script changes (format, segments, colors,
 # thresholds, turn-state logic — anything that alters behaviour), update its
@@ -877,6 +884,20 @@ fi
 # ---------------------------------------------------------------------------
 model=$(echo "$input" | jq -r '.model.display_name // "Claude"' | sed 's/ context)/)/')
 effort=$(echo "$input" | jq -r '.effort.level // empty')
+# Abbreviated to its initial(s). The effort level is a mode you set and then
+# rarely change, so the bar only has to CONFIRM it, not teach it — and one
+# letter buys back three or four columns on the most-read part of the line.
+# "max" is MAX and not M, deliberately: M is medium, and a silent collision
+# between the cheapest and the most expensive setting is the one abbreviation
+# that must never happen. An unrecognised level prints raw rather than being
+# guessed at — a new level is worth reading in full the first time you meet it.
+case "$effort" in
+  low)    effort=L ;;
+  medium) effort=M ;;
+  high)   effort=H ;;
+  xhigh)  effort=XH ;;
+  max)    effort=MAX ;;
+esac
 if [ -n "$effort" ]; then
   case "$model" in
     *" ("*) model="${model%% (*}/${effort} (${model#* (}" ;;
@@ -1577,11 +1598,11 @@ if [ -n "$spend_ready" ]; then
   fi
 fi
 
-# $spend_seg is BUILT here but appended at the very END of the bar, below the
-# weekly-quota block. Computing it here keeps it next to the cache forensics it
-# is derived from; emitting it last is a layout decision (see the header).
+if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
+  out="$out | $spend_seg"
+fi
 
-# --- Weekly quota, joined onto the 5h cell with "•": "+6% = 27% / 1wd1h"
+# --- Weekly quota, last cell of the bar: "+6% / 27% / 1wd1h"
 # The 5h segment answers "can I keep going right now"; this one answers the
 # slower question — am I going to run out of week before the week runs out.
 # Three numbers, in the order you actually ask them:
@@ -1685,22 +1706,20 @@ if [ -n "$week" ]; then
   fi
   # Pace LEADS the absolute figure, same reasoning as the 5h arrow: the signed
   # number is the "am I OK?" glance, the "% left" is the detail you read second.
-  # The "=" between them is a reading aid, not arithmetic: without it "-18% 28%"
-  # is two bare percentages jammed together with nothing saying they are
-  # different quantities. It makes the pair scan as one statement -- "18% behind,
-  # which leaves 27%" -- for the price of one cell.
+  # "/" and not "=": this segment is three readings of ONE window -- pace, what
+  # is left, how long it runs -- and "/" is already the separator that means
+  # exactly that everywhere else in this bar ("96% left / 4:44h"). An "=" read
+  # as arithmetic that does not hold; one separator, used consistently, does
+  # the same job of saying "these are different quantities" for the same cell.
   if [ -n "$wpace" ]; then
-    week_seg="${wpace} = ${wleft_str}"
+    week_seg="${wpace} / ${wleft_str}"
   else
     week_seg="$wleft_str"
   fi
   [ -n "$wdur" ] && week_seg="${week_seg} / ${wdur}"
-  # "•" and not "|": this rides in the SAME cell as the 5h figure. Both answer
-  # "how much room is left", only over different horizons, and reading them as
-  # one unit is what makes "96% left / 4:46h • +14% = 83% / 3wd11h" scan as a
-  # single now-vs-week sentence instead of two unrelated percentages.
-  out="$out • $week_seg"
 fi
+# $week_seg is BUILT here, next to the arithmetic that produces it, but APPENDED
+# below the location segment — this is the last cell of the bar.
 
 # --- Location: "folder" or "folder@branch" ----------------------------------
 # Back in the bar after living in the session title: the title is being freed
@@ -1726,10 +1745,8 @@ case "$branch" in
 esac
 [ -n "$loc" ] && out="$out | ${TEAL}${loc}${RESET}"
 
-# --- Spend, last (built far above, next to the cache forensics) -------------
-if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
-  out="$out | $spend_seg"
-fi
+# --- Weekly quota, last cell (built above, next to its arithmetic) ----------
+[ -n "$week_seg" ] && out="$out | $week_seg"
 
 # --- Resolve the context counter's placeholder, now that the cache state is known.
 # Three reasons the number stops being calm blue, in priority order:
