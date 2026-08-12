@@ -22,7 +22,7 @@
 #
 # NOTE — this deliberately keeps overriding the session title, which suppresses
 # Claude Code's own AI title (it only auto-titles a session when no custom title
-# is set). See ~/workspace/victor-statusline/claude/victor-claude-statusline.md §5
+# is set). See ~/workspace/victor-statusline/claude/victor-claude-statusline.md §6
 # (published at https://github.com/victorrentea/victor-statusline).
 #
 # Trunk branches are omitted on purpose: master/main is the default state, so

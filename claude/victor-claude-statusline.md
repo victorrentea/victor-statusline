@@ -358,6 +358,20 @@ quantity, a piece of the same money.
   single-cell, so the line never shifts width; `refreshInterval: 1` is what
   advances the frame, so the animation adds zero extra work per render.
 
+  **The hue rides the same frame index — and stops at the glyph.** Each frame
+  carries a colour from a five-step clay/salmon ramp (`BLOOM0`–`BLOOM4`, 256-colour
+  180 → 174 → 173 → 209 → 202), so the flower opens and warms together, closes and
+  cools together: one animation, not two that happen to overlap. The ramp travels
+  *pale → saturated*, never dark → light, because a luminance ramp only works
+  against a known background and this bar is read on a white IntelliJ terminal as
+  often as on a dark one — `#ffd7af` disappears on white, `#444` on black, while
+  saturation survives both. **The digits stay in the terminal's normal colour.**
+  Colouring the figure too was the earlier rule and it defeated itself: the money
+  is the thing you are trying to read, and a number whose hue changes every second
+  is a number you keep re-reading to check whether the colour means something. It
+  never did — the hue is a clock, not a verdict. The movement belongs entirely to
+  the cell that carries no information; the figure holds still to be read.
+
   **The ninth frame is a literal `$`.** Since the flower is standing in for the
   currency sign, letting the real one surface once per cycle re-states what the
   glyph is replacing: the units flash back for a beat, and the animation stays
@@ -1087,6 +1101,24 @@ TEAL="${ESC}[38;5;80m"
 # unverified, without borrowing the meaning of orange/red (which mean "low").
 GREY="${ESC}[38;5;244m"
 
+# --- Bloom ramp: the five brightness steps the running turn's cost breathes
+# through, in step with the flower's own bloom (see the $((now % 9)) case below).
+# The clay/salmon family, because that is what Claude Code paints "Working…" in
+# — the two are not synchronised (the spinner redraws several times a second and
+# does not expose its phase; this bar redraws once), but they should at least be
+# the same colour of "busy".
+#
+# The ramp travels pale -> SATURATED, not dark -> light. A luminance ramp only
+# works against a known background, and this bar is read on a white IntelliJ
+# terminal as often as on a dark one: #ffd7af at the peak is invisible on white,
+# #444 at the trough is invisible on black. Saturation survives both, so every
+# frame stays legible and only the *urgency* of the hue moves.
+BLOOM0="${ESC}[38;5;180m"   # #d7af87 palest — the closed "·"
+BLOOM1="${ESC}[38;5;174m"   # #d78787 muted salmon
+BLOOM2="${ESC}[38;5;173m"   # #d7875f clay, Claude's own
+BLOOM3="${ESC}[38;5;209m"   # #ff875f coral
+BLOOM4="${ESC}[38;5;202m"   # #ff5f00 peak — full bloom, and the "$" flash
+
 # --- Blink ------------------------------------------------------------------
 # Two states, one second apart (refreshInterval 1): the FOREGROUND is either the
 # warning hue or the terminal's normal colour. Nothing in between.
@@ -1707,23 +1739,35 @@ if [ -n "$spend_ready" ]; then
     # "$" surface once per cycle re-states what the glyph is replacing — the
     # units flash back for a beat and the animation stays honest about the slot
     # it occupies. Single cell like the rest, so the width still never moves.
+    #
+    # The COLOUR rides the same case, on the same frame index, so the hue and the
+    # glyph are two readings of one number rather than two animations that happen
+    # to overlap: the bloom opens and warms together, closes and cools together.
+    #
+    # The bloom stops at the glyph: the DIGITS stay in the terminal's normal
+    # colour. Colouring the figure too was the earlier rule and it defeated
+    # itself — the money is the thing you are trying to read, and a number whose
+    # hue changes every second is a number you keep re-reading to check whether
+    # the colour means something. It never did; only the glyph is animated, and
+    # the glyph is the cell that carries no information anyway. Now the movement
+    # sits entirely in the decoration and the figure holds still to be read.
     case $((now % 9)) in
-      0) flower="·" ;;
-      1|7) flower="✢" ;;
-      2|6) flower="✳" ;;
-      3|5) flower="✻" ;;
-      8) flower="$" ;;
-      *) flower="✽" ;;
+      0) flower="·"; bloom=$BLOOM0 ;;
+      1|7) flower="✢"; bloom=$BLOOM1 ;;
+      2|6) flower="✳"; bloom=$BLOOM2 ;;
+      3|5) flower="✻"; bloom=$BLOOM3 ;;
+      8) flower="$"; bloom=$BLOOM4 ;;
+      *) flower="✽"; bloom=$BLOOM4 ;;
     esac
     # The flower stands in for the "$". No cost yet on this turn => print no
     # figure at all and let the bare flower open the segment.
     if [ "$(echo "$turn_cost > 0" | bc -l)" = "1" ]; then
-      turn_money=$(printf '%s%.1f' "$flower" "$turn_cost")
+      turn_money=$(printf '%s%s%s%.1f' "$bloom" "$flower" "$RESET" "$turn_cost")
     else
       turn_money=""
     fi
     turn_suffix=""
-    lone="$flower"
+    lone="${bloom}${flower}${RESET}"
   else
     # idle after a finished turn -> that turn's cost is in turn_cost; just after
     # Enter (turn_cost==0) -> fall back to the previous turn's cost.
