@@ -22,7 +22,7 @@ times, and all three must move together in one commit:
 
 | # | Copy | Path |
 |---|------|------|
-| 1 | **live** (what runs) | `~/.claude/statusline-command.sh`, `~/.claude/hooks/session-title.sh` |
+| 1 | **live** (what runs) | `~/.claude/statusline-command.sh` — **symlink → copy 2**, `~/.claude/hooks/session-title.sh` |
 | 2 | **repo** (what people install) | `claude/statusline-command.sh`, `claude/hooks/session-title.sh` |
 | 3 | **embedded** (what makes the doc self-contained) | the fenced block under `## The full script` / `## The title hook` in `claude/victor-claude-statusline.md` |
 
@@ -32,8 +32,18 @@ Same rule for `copilot/statusline.sh` and `copilot/quota-refresh.sh` against
 Editing only the live script is the failure mode this repo keeps hitting: the
 flower's colour ramp shipped once with copies 2 and 3 left a whole revision
 behind, so the published script and the doc both described a version that no
-longer existed. Copy the live file over the repo one, then re-sync the embedded
-block from it.
+longer existed.
+
+**For `statusline-command.sh`, copies 1 and 2 are now the same inode**:
+`~/.claude/statusline-command.sh` is a symlink to `claude/statusline-command.sh`
+here. Editing either path edits both, and the drift above is structurally
+impossible rather than merely forbidden. Do **not** `cp` between the two paths —
+that is now a self-copy, which errors at best and truncates the file at worst.
+Edit in place, then re-sync only the embedded block (copy 3).
+
+The remaining copies are still plain files and still need the copy-then-sync
+dance: everything under `claude/hooks/` and all of `copilot/`. Symlinking those
+the same way is the obvious next step and has not been done yet.
 
 ### Always run the checker before committing
 
