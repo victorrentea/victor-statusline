@@ -30,35 +30,6 @@ if [ -f "$HOME/.claude/statusline-debug" ]; then
     >> "$HOME/.claude/statusline-debug.log" 2>/dev/null
 fi
 # ---------------------------------------------------------------------------
-ESC=$(printf '\033')
-RESET="${ESC}[0m"
-ORANGE="${ESC}[38;5;208m"
-RED="${ESC}[31m"
-BLUE="${ESC}[38;5;111m"
-GREEN="${ESC}[38;5;78m"
-# Claude Code paints the prompt box border and the session title on it in teal;
-# 80 (#5fd7d7) is the closest 256-colour match, so the folder name in the status
-# line reads as part of that same frame. Bump to 73/79/116 to taste.
-TEAL="${ESC}[38;5;80m"
-# Grey is the "do not act on this" colour: it says the figure is present but
-# unverified, without borrowing the meaning of orange/red (which mean "low").
-GREY="${ESC}[38;5;244m"
-
-# --- Effort ramp: how loud the effort suffix is allowed to be ----------------
-# Medium is the ANCHOR and it is deliberately uncoloured — it is the setting you
-# are on most of the time, and a bar that colours its own default trains the eye
-# to ignore the colour. Everything else is measured as a departure from it, in
-# ONE hue: the ramp travels up the red family only (dim red -> full red), so the
-# glyph's intensity reads as "how expensive is this turn" without needing a
-# legend. Orange was rejected for `H` for exactly that reason — it is a second
-# hue, and it already means "quota running low" three segments to the right.
-EFFORT_HI="${ESC}[38;5;167m"      # #d75f5f muted brick — a red held back
-EFFORT_XH="${ESC}[38;5;196m"      # #ff0000 full red — the loud end of the ramp
-# MAX has nowhere brighter to go, so it goes BOLD on the same red rather than
-# reaching for a new colour: it is the same warning, turned up, and reusing the
-# hue keeps "how red is it" a single readable axis.
-EFFORT_MAX="${ESC}[1;38;5;196m"
-
 model=$(echo "$input" | jq -r '.model.display_name // "Claude"' | sed 's/ context)/)/')
 effort=$(echo "$input" | jq -r '.effort.level // empty')
 # Abbreviated to its initial(s). The effort level is a mode you set and then
@@ -68,29 +39,13 @@ effort=$(echo "$input" | jq -r '.effort.level // empty')
 # between the cheapest and the most expensive setting is the one abbreviation
 # that must never happen. An unrecognised level prints raw rather than being
 # guessed at — a new level is worth reading in full the first time you meet it.
-#
-# The letters are also COLOURED, on the ramp defined above: `M` in the terminal's
-# own colour, `H` a muted red, `XH` full red, `MAX` bold full red — and `L` grey,
-# the one step BELOW the anchor, since it is the setting that costs you nothing
-# and asks for nothing. The point is that the setting is readable without being
-# read: you catch a red letter next to the model name out of the corner of your
-# eye and know this turn is thinking hard, which is precisely the state that is
-# easy to leave switched on by accident after the task that needed it is done.
-# An unrecognised level prints raw AND uncoloured — the ramp is a claim about
-# cost, and we have no basis for making it about a level we do not know.
 case "$effort" in
-  low)    effort=L;   effort_col=$GREY ;;
-  medium) effort=M;   effort_col="" ;;
-  high)   effort=H;   effort_col=$EFFORT_HI ;;
-  xhigh)  effort=XH;  effort_col=$EFFORT_XH ;;
-  max)    effort=MAX; effort_col=$EFFORT_MAX ;;
-  *)      effort_col="" ;;
+  low)    effort=L ;;
+  medium) effort=M ;;
+  high)   effort=H ;;
+  xhigh)  effort=XH ;;
+  max)    effort=MAX ;;
 esac
-# Coloured HERE, before the suffix is spliced into the model name, so the escape
-# codes wrap the effort letters and nothing else — the model name itself must
-# stay in the terminal's colour, and the RESET has to land immediately after the
-# letters or it would bleed into the ` (1M)` label spliced in right after them.
-[ -n "$effort" ] && [ -n "$effort_col" ] && effort="${effort_col}${effort}${RESET}"
 # Glued straight onto the name, no separator: "Opus 5H", not "Opus 5/H". The
 # slash was doing the work of a delimiter in a place that has no ambiguity to
 # resolve — the effort is always a trailing capital or two, and the model name
@@ -167,6 +122,20 @@ fi
 # no longer a fact, only the last thing anybody saw. It is still the best number
 # available -- so it is shown, but marked (see $STALE_5H use below).
 STALE_5H="${CLAUDE_QUOTA_STALE_SECS:-900}"
+
+ESC=$(printf '\033')
+RESET="${ESC}[0m"
+ORANGE="${ESC}[38;5;208m"
+RED="${ESC}[31m"
+BLUE="${ESC}[38;5;111m"
+GREEN="${ESC}[38;5;78m"
+# Claude Code paints the prompt box border and the session title on it in teal;
+# 80 (#5fd7d7) is the closest 256-colour match, so the folder name in the status
+# line reads as part of that same frame. Bump to 73/79/116 to taste.
+TEAL="${ESC}[38;5;80m"
+# Grey is the "do not act on this" colour: it says the figure is present but
+# unverified, without borrowing the meaning of orange/red (which mean "low").
+GREY="${ESC}[38;5;244m"
 
 # --- Bloom ramp: the five brightness steps the running turn's cost breathes
 # through, in step with the flower's own bloom (see the $((now % 9)) case below).
