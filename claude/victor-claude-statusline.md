@@ -692,78 +692,55 @@ that frame even though it sits a line below it.
 | detached HEAD | `ai` |
 | fresh `git init`, no commits yet | `ai@fix-cache` |
 
-- **Trunk branches are omitted**, same rule as the title (§6): `master`/`main` is
-  the default state, so naming it trains the eye to skip the field. No `@branch`
-  ⇒ you're on the trunk, and any `@something` you *do* see is worth reading.
+- **Trunk branches are omitted**: `master`/`main` is the default state, so naming
+  it trains the eye to skip the field. No `@branch` ⇒ you're on the trunk, and any
+  `@something` you *do* see is worth reading.
 - **`git branch --show-current`, not `rev-parse --abbrev-ref HEAD`.** The latter
   fails on an **unborn branch** — a `git init` before the first commit — which is
   exactly when you most want to be told where you are.
 - **One git call per render, not two.** The bar re-renders at
   `refreshInterval: 1`, so a subprocess here costs once a second, not once a
-  prompt. That is why this segment does *not* do the title's worktree resolution
-  (§6), which needs two more `rev-parse` calls; a worktree still shows its own
-  directory name, just without the `<main-repo>@<branch>/<worktree>` expansion.
+  prompt. That is why this segment does *not* resolve worktrees, which needs two
+  more `rev-parse` calls; a worktree still shows its own directory name, just
+  without the `<main-repo>@<branch>/<worktree>` expansion (§6).
 
-> **This currently duplicates the session title (§6)**, which also carries the
-> location. That is deliberate but temporary: it is the precondition for freeing
-> the title to hold Claude Code's own per-session names, which it only generates
-> when no custom title is set. Until `session-title.sh` stops emitting
-> `sessionTitle`, the location is on screen twice.
+> **This segment is now the only place the location appears.** It used to be on
+> screen twice, because a sibling hook also wrote the location into the session
+> title; that hook has since been removed precisely so the title could go back to
+> holding Claude Code's own per-session summaries (§6).
 
 ---
 
-## 6. The session title — `ai@fix-cache/kind-mendeleev-f33675`
+## 6. The session title — left to Claude Code
 
 Not part of the status line, but the other half of the same display: Claude Code
-draws a **session title** on the prompt box border, one line above the bar. It is
-set by a sibling hook, `~/.claude/hooks/session-title.sh`.
+draws a **session title** on the prompt box border, one line above the bar, and
+lists sessions by that same value in `/resume`.
 
-It names **where the session is**, never what it is about:
+**Nothing in this repo sets it any more.** The title is Claude Code's own
+generated summary — "Fixed prompt-cache detection in the status line" rather than
+`ai@fix-cache`. This section exists to record *why* that is the right default,
+because the obvious-looking improvement is a trap that costs you the summaries.
 
-| cwd | Title |
-|-----|-------|
-| repo on the trunk | `ai` |
-| repo off the trunk | `ai@fix-cache` |
-| inside a linked git worktree | `agentic-how@embabel-demo/kind-mendeleev-f33675` |
-| `$HOME` | `☢️ victorrentea` |
+### There was a hook here, and removing it was the plan all along
 
-- **Trunk branches are omitted.** `master`/`main` is the default state, so naming
-  it says nothing and trains the eye to skip the field — which is exactly when
-  you'd miss the one time it said something else. No branch shown ⇒ you're on the
-  trunk. (Same rule the location segment in the bar uses — §5.)
-- **A worktree shows both repo and worktree.** A linked worktree's git-dir is
-  `<main-repo>/.git/worktrees/<name>`, while `--git-common-dir` always points at
-  the main repo. That pair lets the title say *which repo* **and** *which
-  worktree* — otherwise you get a generated name like `kind-mendeleev-f33675`,
-  which identifies nothing you know.
-- Wired on **SessionStart** (a fresh terminal is named before the first prompt)
-  **and UserPromptSubmit** (so it follows a `cd` or a branch switch mid-session).
+`~/.claude/hooks/session-title.sh` used to name each session after **where** it
+was — `ai`, `ai@fix-cache`, `agentic-how@embabel-demo/kind-mendeleev-f33675`,
+`☢️ victorrentea` for `$HOME` — resolving linked worktrees through
+`--git-common-dir` so the title named the *main* repo and the worktree instead of
+a generated `kind-mendeleev-f33675` that identifies nothing.
 
-### Why location and not a summary
+It was deleted because **the location segment in the bar (§5) already says all of
+that**, on every render rather than once a prompt. Once the bar carried the
+location, the hook was buying a duplicate — and paying for it with the summaries.
+The bar's version is slightly weaker (no worktree expansion, to stay at one `git`
+call per second), which is the whole of what was given up.
 
-This replaced an LLM summarizer that spawned a `claude -p --model haiku` on every
-prompt to guess a 5-7 word topic, cached it, and rendered `folder --- <summary>`.
-It was retired because:
-
-- it was **wrong often enough not to be trusted**, which makes a title worse than
-  no title — you read it, believe it, and it's describing the previous topic;
-- it **lagged one prompt behind by construction** (the CLI needs 10-15 s to cold
-  start, so it could never sit on the blocking path);
-- and it answered **the question you already know the answer to**. "What am I
-  working on" is in your head. "Which of these nine terminals is this, and am I
-  in the worktree or the real repo?" is the thing you cannot tell at a glance and
-  the thing that gets you burned. Location is also always correct, costs no
-  tokens, and needs no network.
-
-### The trade-off: this suppresses Claude Code's own AI title
+### Why setting it at all costs you the AI title
 
 **Setting `sessionTitle` from a hook permanently disables the built-in session
-summary**, and that same value is what `/resume` lists sessions by. So the
-resume picker now shows `ai`, `ai@fix-cache`, … instead of "Fixed prompt-cache
-detection in the status line".
-
-This is not a guess. In the 2.1.221 binary the native titler is gated on there
-being no custom title:
+summary.** In the 2.1.221 binary the native titler is gated on there being no
+custom title:
 
 ```js
 let bs = Dt();                    // session id
@@ -780,16 +757,30 @@ ever opens. Titles are persisted into the transcript as `custom-title` entries
 both exist.
 
 There is no way to have both through `sessionTitle` — the prompt-box title, the
-terminal window title, and the `/resume` label are one single value. If the
-`/resume` summaries are ever worth more than the folder name, the escape hatch is
-to stop emitting `sessionTitle` entirely, set `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`,
-and write the folder into the terminal's window title directly with an OSC 0
-sequence to `/dev/tty` — the window title bar then carries the location and the
-prompt-box/resume label goes back to being Claude's own summary.
+terminal window title, and the `/resume` label are one single value. Deleting the
+hook *is* the escape hatch the previous revision of this section described. If you
+want the location back in the window title without paying for it again, don't
+re-add the hook: set `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` and write an OSC 0
+sequence to `/dev/tty` yourself, which leaves `sessionTitle` unset and the
+prompt-box/resume label Claude's own.
+
+### And do not replace it with a summarizer
+
+Before the location hook there was an LLM summarizer that spawned a
+`claude -p --model haiku` on every prompt to guess a 5-7 word topic. It is worth
+knowing why it lost, since the AI title now fills that slot for free:
+
+- it was **wrong often enough not to be trusted**, which makes a title worse than
+  no title — you read it, believe it, and it's describing the previous topic;
+- it **lagged one prompt behind by construction** (the CLI needs 10-15 s to cold
+  start, so it could never sit on the blocking path);
+- and it answered **the question you already know the answer to**. "What am I
+  working on" is in your head; "which of these nine terminals is this" is not —
+  and that one is now the bar's job, at no token cost and with no network.
 
 > Unrelated historical note, to stop the next person drawing a false conclusion:
 > the `~/.claude/projects/**/*.jsonl.auto-rename` sidecar files (240 of them,
-> none newer than 2026-06-11) are **not** evidence of this suppression. That was
+> none newer than 2026-06-11) are **not** evidence of title suppression. That was
 > an older storage mechanism; the string `auto-rename` does not appear in the
 > 2.1.221 binary at all. They stopped because the product changed, not because of
 > any hook.
@@ -1965,13 +1956,15 @@ fi
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 [ -n "$cwd" ] || cwd=$PWD
 loc=$(basename "$cwd")
-# ONE git call, not the two session-title.sh makes: this bar re-renders every
-# second, so a subprocess here is a per-second cost, not a per-prompt one.
+# ONE git call, deliberately: this bar re-renders every second, so a subprocess
+# here is a per-second cost, not a per-prompt one. Resolving worktrees properly
+# would need two more rev-parse calls, and that is the one thing this segment
+# gives up (see §6 of the companion doc).
 # --show-current and not `rev-parse --abbrev-ref HEAD`: the latter FAILS on an
 # unborn branch (a fresh `git init` before the first commit), which is exactly
 # when you most want to be told which branch you are on.
-# Trunk branches are omitted for the same reason as in the title — master/main
-# is the default state, so naming it trains the eye to skip the field.
+# Trunk branches are omitted: master/main is the default state, so naming it
+# trains the eye to skip the field.
 branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
 case "$branch" in
   ''|master|main) ;;
@@ -2037,107 +2030,11 @@ fi
 echo "$out"
 ```
 
-## The title hook — `~/.claude/hooks/session-title.sh`
-
-Wired in `~/.claude/settings.json` on both `SessionStart` and `UserPromptSubmit`
-(see §6):
-
-```json
-"SessionStart":     [{"hooks": [{"type": "command", "command": "~/.claude/hooks/session-title.sh"}]}],
-"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "~/.claude/hooks/session-title.sh"}]}]
-```
-
-```sh
-#!/bin/sh
-# UserPromptSubmit + SessionStart hook: name the session after WHERE it is, not
-# what it is about.
-#
-#   ai                                  plain folder, on the trunk
-#   ai@fix-cache                        off master/main -> the branch matters
-#   agentic-how@embabel-demo/kind-mendeleev-f33675
-#                                       inside a linked git worktree: the MAIN
-#                                       repo, the branch, and the worktree name
-#   ☢️ victorrentea                      operating straight out of $HOME
-#
-# This title is what Claude Code paints on the prompt-box border, in the
-# terminal's window title, and in the /resume picker.
-#
-# Why location and not a summary: this replaced an LLM summarizer that spawned a
-# Haiku CLI on every prompt to guess a 5-7 word topic. It was wrong often enough
-# that it could not be trusted, it lagged a prompt behind by construction, and
-# "what am I working on" is the one thing you already know — whereas "which of my
-# nine terminals is this, and is it the worktree or the real repo" is exactly
-# what you cannot tell at a glance and what you get burned by. Location is also
-# always correct, costs no tokens, and needs no network.
-#
-# NOTE — this deliberately keeps overriding the session title, which suppresses
-# Claude Code's own AI title (it only auto-titles a session when no custom title
-# is set). See ~/workspace/victor-statusline/claude/victor-claude-statusline.md §6
-# (published at https://github.com/victorrentea/victor-statusline).
-#
-# Trunk branches are omitted on purpose: master/main is the default state, so
-# naming it says nothing and trains the eye to skip the field — which is exactly
-# when you'd miss the one time it said something else.
-
-# Don't title throwaway `claude -p` children spawned by tooling.
-for v in CLAUDE_TITLE_HOOK_RUNNING CLAUDE_RENAME_HOOK_RUNNING CLAUDE_SKIP_PROMPT_CAPTURE; do
-    eval "[ -n \"\$$v\" ]" && exit 0
-done
-
-INPUT=$(cat)
-CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // .workspace.current_dir // empty' 2>/dev/null)
-[ -n "$CWD" ] || CWD=$PWD
-
-NAME=$(basename "$CWD")
-BRANCH=$(git -C "$CWD" branch --show-current 2>/dev/null)
-
-# A linked worktree's git-dir is <main-repo>/.git/worktrees/<worktree-name>,
-# while --git-common-dir always points at the MAIN repo's .git. That pair is what
-# lets the title say "which repo" and "which worktree" instead of just showing a
-# generated worktree name (kind-mendeleev-f33675) that names nothing you know.
-GITDIR=$(git -C "$CWD" rev-parse --absolute-git-dir 2>/dev/null)
-WORKTREE=""
-case "$GITDIR" in
-    */worktrees/*)
-        WORKTREE=$(basename "$GITDIR")
-        COMMON=$(git -C "$CWD" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
-        [ -n "$COMMON" ] && NAME=$(basename "$(dirname "$COMMON")")
-        ;;
-esac
-
-TITLE="$NAME"
-case "$BRANCH" in
-    ''|master|main) ;;
-    *) TITLE="${TITLE}@${BRANCH}" ;;
-esac
-[ -n "$WORKTREE" ] && TITLE="${TITLE}/${WORKTREE}"
-
-# Radioactive marker for $HOME: nothing here is a project, and edits land in
-# dotfiles rather than in a repo you can revert.
-[ "$(cd "$CWD" 2>/dev/null && pwd -P)" = "$(cd "$HOME" && pwd -P)" ] && TITLE="☢️ ${TITLE}"
-
-# Wired on BOTH SessionStart (so a fresh terminal is named before the first
-# prompt) and UserPromptSubmit (so it follows a `cd` or a branch switch mid-
-# session). SessionStart additionally accepts terminalSequence — an OSC 0 that
-# names the window itself; kept from the inline hook this script replaced.
-EVENT=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // "UserPromptSubmit"' 2>/dev/null)
-if [ "$EVENT" = "SessionStart" ]; then
-    jq -nc --arg t "$TITLE" --arg p "$(printf '%s' "$CWD" | sed "s|^$HOME|~|")" \
-        '{hookSpecificOutput:{hookEventName:"SessionStart",
-          terminalSequence:("\u001b]0;Claude Code: "+$p+"\u0007"),
-          sessionTitle:$t}}'
-else
-    jq -nc --arg t "$TITLE" --arg e "$EVENT" \
-        '{hookSpecificOutput:{hookEventName:$e,sessionTitle:$t}}'
-fi
-exit 0
-```
-
 ---
 
-*Maintained by Victor. The canonical script is global (`~/.claude/`); this file
-documents it **and embeds verbatim copies** of it and of the title hook
-(above), so the whole thing ships
+*Maintained by Victor. The live script is `~/.claude/statusline-command.sh`,
+which is a symlink to the copy in this repo — they cannot drift. This file
+documents it **and embeds a verbatim copy** (above), so the whole thing ships
 with the repo. Keep them in lockstep — a behaviour change must update the script,
 this documentation, and the embedded copy in the same change (see the rule in the
 script header).*

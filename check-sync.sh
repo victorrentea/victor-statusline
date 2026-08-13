@@ -13,7 +13,6 @@ import pathlib, sys
 # (doc, heading that precedes the fenced block, fence language, script file)
 PAIRS = [
     ("claude/victor-claude-statusline.md",  "## The full script", "sh",   "claude/statusline-command.sh"),
-    ("claude/victor-claude-statusline.md",  "## The title hook",  "sh",   "claude/hooks/session-title.sh"),
     ("copilot/victor-copilot-statusline.md", "## File 1",         "bash", "copilot/statusline.sh"),
     ("copilot/victor-copilot-statusline.md", "## File 2",         "bash", "copilot/quota-refresh.sh"),
 ]

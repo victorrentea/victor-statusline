@@ -22,9 +22,9 @@ times, and all three must move together in one commit:
 
 | # | Copy | Path |
 |---|------|------|
-| 1 | **live** (what runs) | `~/.claude/statusline-command.sh` — **symlink → copy 2**, `~/.claude/hooks/session-title.sh` |
-| 2 | **repo** (what people install) | `claude/statusline-command.sh`, `claude/hooks/session-title.sh` |
-| 3 | **embedded** (what makes the doc self-contained) | the fenced block under `## The full script` / `## The title hook` in `claude/victor-claude-statusline.md` |
+| 1 | **live** (what runs) | `~/.claude/statusline-command.sh` — **symlink → copy 2** |
+| 2 | **repo** (what people install) | `claude/statusline-command.sh` |
+| 3 | **embedded** (what makes the doc self-contained) | the fenced block under `## The full script` in `claude/victor-claude-statusline.md` |
 
 Same rule for `copilot/statusline.sh` and `copilot/quota-refresh.sh` against
 `copilot/victor-copilot-statusline.md` (`## File 1` / `## File 2`).

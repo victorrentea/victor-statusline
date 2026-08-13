@@ -21,7 +21,6 @@ Opus 4.8/xhigh 50K/1M | ↗98% left / 4:47h | ✻0.5 ⊂ $25 | +24% = 70% / 1d1h
 |------|------------|
 | [`claude/victor-claude-statusline.md`](claude/victor-claude-statusline.md) | **Claude Code** status line — full reference and design rationale |
 | `claude/statusline-command.sh` | the script it documents |
-| `claude/hooks/session-title.sh` | companion hook: names the session after folder / branch / worktree |
 | [`copilot/victor-copilot-statusline.md`](copilot/victor-copilot-statusline.md) | **GitHub Copilot CLI** status line — full reference |
 | `copilot/statusline.sh`, `copilot/quota-refresh.sh` | the scripts it documents |
 | `check-sync.sh` | verifies each doc's embedded copy still matches the real script |
@@ -38,11 +37,10 @@ this repo:
 **Claude Code** — run `claude` and paste:
 
 > Read `claude/victor-claude-statusline.md` and set me up an identical status
-> line: create `~/.claude/statusline-command.sh` and
-> `~/.claude/hooks/session-title.sh` exactly as in the doc, `chmod +x` both, and
-> wire the `statusLine` block plus the `SessionStart`/`UserPromptSubmit` hooks
-> into `~/.claude/settings.json` (merge with the existing JSON, don't clobber
-> it). Then verify by piping a sample payload into the script.
+> line: create `~/.claude/statusline-command.sh` exactly as in the doc,
+> `chmod +x` it, and wire the `statusLine` block into `~/.claude/settings.json`
+> (merge with the existing JSON, don't clobber it). Then verify by piping a
+> sample payload into the script.
 
 **Copilot CLI** — run `copilot` and paste:
 
@@ -54,18 +52,13 @@ this repo:
 ```sh
 # Claude Code
 install -m 755 claude/statusline-command.sh  ~/.claude/statusline-command.sh
-install -m 755 claude/hooks/session-title.sh ~/.claude/hooks/session-title.sh
 ```
 
 then add to `~/.claude/settings.json`:
 
 ```json
 {
-  "statusLine": { "type": "command", "command": "~/.claude/statusline-command.sh", "refreshInterval": 1 },
-  "hooks": {
-    "SessionStart":     [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/session-title.sh" }] }],
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "~/.claude/hooks/session-title.sh" }] }]
-  }
+  "statusLine": { "type": "command", "command": "~/.claude/statusline-command.sh", "refreshInterval": 1 }
 }
 ```
 
@@ -87,10 +80,10 @@ then add the `statusLine` block from `copilot/victor-copilot-statusline.md`
   `turn-state.sh` (turn boundaries) and `quota-state.sh` (cross-terminal quota
   merge). Without them it still runs and degrades to its fallback heuristics;
   the doc says exactly where.
-- **The session-title hook suppresses Claude Code's own AI session title**,
-  which is also what `/resume` lists sessions by. That is a deliberate trade —
-  §5 of the Claude doc explains it, with the evidence, and describes the escape
-  hatch if you'd rather keep the summaries.
+- **Nothing here sets the session title**, deliberately: any hook that emits
+  `sessionTitle` permanently suppresses Claude Code's own AI summary, which is
+  also what `/resume` lists sessions by. §6 of the Claude doc has the evidence
+  from the binary, and explains why the location belongs in the bar instead.
 - The Copilot bar reads an **undocumented** endpoint (`copilot_internal/user`)
   for the credit figures; field names can change between CLI versions.
 

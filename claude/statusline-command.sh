@@ -1001,13 +1001,15 @@ fi
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 [ -n "$cwd" ] || cwd=$PWD
 loc=$(basename "$cwd")
-# ONE git call, not the two session-title.sh makes: this bar re-renders every
-# second, so a subprocess here is a per-second cost, not a per-prompt one.
+# ONE git call, deliberately: this bar re-renders every second, so a subprocess
+# here is a per-second cost, not a per-prompt one. Resolving worktrees properly
+# would need two more rev-parse calls, and that is the one thing this segment
+# gives up (see §6 of the companion doc).
 # --show-current and not `rev-parse --abbrev-ref HEAD`: the latter FAILS on an
 # unborn branch (a fresh `git init` before the first commit), which is exactly
 # when you most want to be told which branch you are on.
-# Trunk branches are omitted for the same reason as in the title — master/main
-# is the default state, so naming it trains the eye to skip the field.
+# Trunk branches are omitted: master/main is the default state, so naming it
+# trains the eye to skip the field.
 branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
 case "$branch" in
   ''|master|main) ;;
