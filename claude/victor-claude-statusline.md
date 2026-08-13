@@ -78,7 +78,7 @@ columns per join versus a wordier separator.
 | Piece | Meaning | Source (stdin JSON) |
 |-------|---------|---------------------|
 | `Opus 5` | model display name (with ` context)` trimmed to `)`) | `.model.display_name` |
-| `XH` | reasoning effort, abbreviated (`L`/`M`/`H`/`XH`/`MAX`), glued straight onto the name before any `(size)` | `.effort.level` |
+| `XH` | reasoning effort, abbreviated (`L`/`M`/`H`/`XH`/`MAX`) and coloured on a red ramp, glued straight onto the name before any `(size)` | `.effort.level` |
 | `50K` | absolute context tokens used (blue) = `used% × size` | `.context_window.used_percentage` × size |
 | `/1M` | context window size | model's `(1M)` suffix, else `.context_window.context_window_size` |
 
@@ -90,6 +90,30 @@ columns per join versus a wordier separator.
   `MAX` stays spelled out; `M` is medium, and a silent collision between the
   cheapest and the most expensive setting is the one abbreviation that must never
   happen.
+- The letters are **coloured on a one-hue ramp**, so the setting is readable
+  without being read — you catch a red letter beside the model name in peripheral
+  vision and know this turn is thinking hard, which is exactly the state that is
+  easy to leave switched on by accident after the task that needed it is over:
+
+  | Level | Colour | |
+  |-------|--------|---|
+  | `L` | grey (`244`) | one step *below* the anchor — costs nothing, asks for nothing |
+  | `M` | terminal's own colour | **the anchor**, deliberately uncoloured |
+  | `H` | muted brick red (`167`, `#d75f5f`) | a red held back |
+  | `XH` | full red (`196`, `#ff0000`) | the loud end of the ramp |
+  | `MAX` | **bold** full red (`196`) | nowhere brighter to go, so it goes bold |
+
+  Medium is uncoloured *because* it is the setting you are on most of the time: a
+  bar that paints its own default trains the eye to ignore the paint, and then
+  has nothing left to say when the value actually changes. Everything else is a
+  departure from that anchor, measured in **one hue** — dim red up to full red —
+  so intensity reads directly as "how expensive is this turn" with no legend to
+  remember. Orange was rejected for `H` for that reason: it is a second hue, and
+  it already means *quota running low* three segments to the right. `MAX` reuses
+  `XH`'s red with a bold attribute rather than reaching for a new colour, keeping
+  "how red is it" a single readable axis. An unrecognised level prints raw **and
+  uncoloured** — the ramp is a claim about cost, and there is no basis for making
+  that claim about a level we do not know.
 - The absolute token count (`50K`) is rendered **blue** when there is nothing to
   worry about — and **blinks** when there is (§1.1).
 - On the **1M window** the explicit `• N%` is **dropped** — the `used/size` pair
@@ -932,10 +956,18 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   around the prompt and the session title it writes on that border — so the two
   read as one frame.
 - **The effort level is abbreviated to its initial(s)** — `L` / `M` / `H` / `XH`
-  / `MAX`. It is a mode you set and rarely change, so the bar only has to
-  *confirm* it. `max` is `MAX` and not `M` on purpose: `M` is `medium`, and a
-  silent collision between the cheapest and the most expensive setting is the one
-  abbreviation that must never happen. An unrecognised level prints raw.
+  / `MAX` — and **coloured on a red ramp** anchored at an uncoloured `M` (§1). It
+  is a mode you set and rarely change, so the bar only has to *confirm* it. `max`
+  is `MAX` and not `M` on purpose: `M` is `medium`, and a silent collision
+  between the cheapest and the most expensive setting is the one abbreviation
+  that must never happen. An unrecognised level prints raw and uncoloured.
+- **The colour codes are defined at the top of the script**, above the effort
+  block rather than beside the other segments' thresholds — the effort suffix is
+  the first thing built, and it now needs `$GREY`/`$RESET` before any other
+  segment exists. The suffix is coloured *before* it is spliced into the model
+  name, so the escapes wrap the letters and nothing else: the `RESET` has to land
+  immediately after them or it would bleed into the ` (1M)` label spliced in
+  right behind.
 - **The branch is printed only when it is neither `master` nor `main`.** The
   trunk is the default state, so naming it says nothing; printing it on every
   render trains the eye to skip that part of the line — which is exactly when
@@ -985,6 +1017,35 @@ if [ -f "$HOME/.claude/statusline-debug" ]; then
     >> "$HOME/.claude/statusline-debug.log" 2>/dev/null
 fi
 # ---------------------------------------------------------------------------
+ESC=$(printf '\033')
+RESET="${ESC}[0m"
+ORANGE="${ESC}[38;5;208m"
+RED="${ESC}[31m"
+BLUE="${ESC}[38;5;111m"
+GREEN="${ESC}[38;5;78m"
+# Claude Code paints the prompt box border and the session title on it in teal;
+# 80 (#5fd7d7) is the closest 256-colour match, so the folder name in the status
+# line reads as part of that same frame. Bump to 73/79/116 to taste.
+TEAL="${ESC}[38;5;80m"
+# Grey is the "do not act on this" colour: it says the figure is present but
+# unverified, without borrowing the meaning of orange/red (which mean "low").
+GREY="${ESC}[38;5;244m"
+
+# --- Effort ramp: how loud the effort suffix is allowed to be ----------------
+# Medium is the ANCHOR and it is deliberately uncoloured — it is the setting you
+# are on most of the time, and a bar that colours its own default trains the eye
+# to ignore the colour. Everything else is measured as a departure from it, in
+# ONE hue: the ramp travels up the red family only (dim red -> full red), so the
+# glyph's intensity reads as "how expensive is this turn" without needing a
+# legend. Orange was rejected for `H` for exactly that reason — it is a second
+# hue, and it already means "quota running low" three segments to the right.
+EFFORT_HI="${ESC}[38;5;167m"      # #d75f5f muted brick — a red held back
+EFFORT_XH="${ESC}[38;5;196m"      # #ff0000 full red — the loud end of the ramp
+# MAX has nowhere brighter to go, so it goes BOLD on the same red rather than
+# reaching for a new colour: it is the same warning, turned up, and reusing the
+# hue keeps "how red is it" a single readable axis.
+EFFORT_MAX="${ESC}[1;38;5;196m"
+
 model=$(echo "$input" | jq -r '.model.display_name // "Claude"' | sed 's/ context)/)/')
 effort=$(echo "$input" | jq -r '.effort.level // empty')
 # Abbreviated to its initial(s). The effort level is a mode you set and then
@@ -994,13 +1055,29 @@ effort=$(echo "$input" | jq -r '.effort.level // empty')
 # between the cheapest and the most expensive setting is the one abbreviation
 # that must never happen. An unrecognised level prints raw rather than being
 # guessed at — a new level is worth reading in full the first time you meet it.
+#
+# The letters are also COLOURED, on the ramp defined above: `M` in the terminal's
+# own colour, `H` a muted red, `XH` full red, `MAX` bold full red — and `L` grey,
+# the one step BELOW the anchor, since it is the setting that costs you nothing
+# and asks for nothing. The point is that the setting is readable without being
+# read: you catch a red letter next to the model name out of the corner of your
+# eye and know this turn is thinking hard, which is precisely the state that is
+# easy to leave switched on by accident after the task that needed it is done.
+# An unrecognised level prints raw AND uncoloured — the ramp is a claim about
+# cost, and we have no basis for making it about a level we do not know.
 case "$effort" in
-  low)    effort=L ;;
-  medium) effort=M ;;
-  high)   effort=H ;;
-  xhigh)  effort=XH ;;
-  max)    effort=MAX ;;
+  low)    effort=L;   effort_col=$GREY ;;
+  medium) effort=M;   effort_col="" ;;
+  high)   effort=H;   effort_col=$EFFORT_HI ;;
+  xhigh)  effort=XH;  effort_col=$EFFORT_XH ;;
+  max)    effort=MAX; effort_col=$EFFORT_MAX ;;
+  *)      effort_col="" ;;
 esac
+# Coloured HERE, before the suffix is spliced into the model name, so the escape
+# codes wrap the effort letters and nothing else — the model name itself must
+# stay in the terminal's colour, and the RESET has to land immediately after the
+# letters or it would bleed into the ` (1M)` label spliced in right after them.
+[ -n "$effort" ] && [ -n "$effort_col" ] && effort="${effort_col}${effort}${RESET}"
 # Glued straight onto the name, no separator: "Opus 5H", not "Opus 5/H". The
 # slash was doing the work of a delimiter in a place that has no ambiguity to
 # resolve — the effort is always a trailing capital or two, and the model name
@@ -1077,20 +1154,6 @@ fi
 # no longer a fact, only the last thing anybody saw. It is still the best number
 # available -- so it is shown, but marked (see $STALE_5H use below).
 STALE_5H="${CLAUDE_QUOTA_STALE_SECS:-900}"
-
-ESC=$(printf '\033')
-RESET="${ESC}[0m"
-ORANGE="${ESC}[38;5;208m"
-RED="${ESC}[31m"
-BLUE="${ESC}[38;5;111m"
-GREEN="${ESC}[38;5;78m"
-# Claude Code paints the prompt box border and the session title on it in teal;
-# 80 (#5fd7d7) is the closest 256-colour match, so the folder name in the status
-# line reads as part of that same frame. Bump to 73/79/116 to taste.
-TEAL="${ESC}[38;5;80m"
-# Grey is the "do not act on this" colour: it says the figure is present but
-# unverified, without borrowing the meaning of orange/red (which mean "low").
-GREY="${ESC}[38;5;244m"
 
 # --- Bloom ramp: the five brightness steps the running turn's cost breathes
 # through, in step with the flower's own bloom (see the $((now % 9)) case below).
