@@ -1268,12 +1268,32 @@ if [ -n "$five" ]; then
     body="${ORANGE}${body}${RESET}"
   fi
   # Parked by quota-gate.sh: this terminal is sleeping until the window resets.
-  # Show the wake time so a frozen-looking terminal is legibly frozen on purpose.
+  # Counts DOWN rather than printing the wake clock time: a frozen terminal that
+  # is frozen on purpose has to prove it is still alive, and a number that moves
+  # every second does that where a fixed "💤14:20" cannot be told apart from a
+  # hung render. `refreshInterval: 1` in settings.json re-runs this script every
+  # second regardless of activity, and the gate's `sleep` runs in a child
+  # process, so the main loop's timer keeps firing while the turn is blocked.
+  # Written as 1h45m, deliberately NOT the "4:47h" style of the window countdown
+  # sitting next to it — the two are different clocks (wake vs window reset) and
+  # should not be mistakable for each other at a glance.
   park="$HOME/.claude/quota-park/$session_id"
   if [ -n "$session_id" ] && [ -f "$park" ]; then
     pwake=$(cat "$park" 2>/dev/null)
-    if [ -n "$pwake" ] && [ "$pwake" -gt "$(date +%s)" ] 2>/dev/null; then
-      body="${body} • ${ORANGE}💤$(date -r "$pwake" +%H:%M)${RESET}"
+    pnow=$(date +%s)
+    if [ -n "$pwake" ] && [ "$pwake" -gt "$pnow" ] 2>/dev/null; then
+      pleft=$((pwake - pnow))
+      ph=$((pleft / 3600))
+      pm=$(((pleft % 3600) / 60))
+      if [ "$ph" -gt 0 ]; then
+        pfmt="${ph}h${pm}m"
+      elif [ "$pm" -gt 0 ]; then
+        pfmt="${pm}m"
+      else
+        # Sub-minute: "0m" reads as "stuck", "<1m" reads as "about to wake".
+        pfmt="<1m"
+      fi
+      body="${body} • ${ORANGE}💤${pfmt}${RESET}"
     fi
   fi
   five_str="${body}"
