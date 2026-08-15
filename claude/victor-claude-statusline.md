@@ -273,7 +273,7 @@ then the **session total**.
 | `✻0.5` | cost of the **current turn** (one decimal) — the **animated flower stands in for the `$`** while it is still adding up |
 | *(or)* `$0.1 3m ago` | when idle: the finished turn's cost, `$` restored, + a ticking "N ago" clock |
 | *(or)* *nothing* | right after Enter, before this turn has billed: **no figure at all**, just the bare flower |
-| `($1.9 cache miss)` | red — this turn **missed the prompt cache**, and rebuilding the prefix cost $1.90 (see §3.1) |
+| `(⊃ $1.9 miss)` | red — this turn **missed the prompt cache**, and rebuilding the prefix cost $1.90 (see §3.1) |
 | `⊂` | subset: the turn's spend is *contained in* the session's (see below) |
 | `$25` | session total, **truncated** — one decimal under `$10` (`$0.3`), whole dollars from `$10` up |
 
@@ -392,30 +392,46 @@ the baseline rolls forward (`prev_turn_cost` in the state file). It now only
 surfaces in the rare *idle-but-nothing-billed* corner; the ordinary
 just-hit-Enter window deliberately shows nothing instead.
 
-## 3.1 Prompt-cache miss — the red `($1.9 cache miss)`
+## 3.1 Prompt-cache miss — the red `(⊃ $1.9 miss)`
 
 ```
-Opus 5XH 200K/1M | 98% left / 4:47h | ✻1.2 ($1.9 cache miss) ⊂ $30 | ai | +24% / 70% / 1d1h
+Opus 5XH 200K/1M | 98% left / 4:47h | ✻1.2 (⊃ $1.9 miss) ⊂ $30 | ai | +24% / 70% / 1d1h
 ```
 
-A red `($1.9 cache miss)` right after the turn price means **this turn did not
+A red `(⊃ $1.9 miss)` right after the turn price means **this turn did not
 reuse the cached prompt prefix** — it paid to build it again, and that rebuild
 cost $1.90.
 
 It used to be a bare red `!`, and that failed for a reason worth recording: the
 marker fires rarely enough that by the time you see one you no longer remember
 what it meant, and a lone `!` next to a number reads as "big number" long before
-it reads as "cache". A label that costs eleven columns a handful of times a day
-is cheaper than a glyph you have to go look up.
+it reads as "cache". A word you can read at a glance is cheaper than a glyph you
+have to go look up.
+
+But it is **one** word, not two: `cache` was the half of the label that carried
+no information. The only thing this line can miss is the prompt cache, and the
+segment it sits in is already entirely about token cost — so the word only
+restated the context, at six columns on the single most crowded line on the
+screen. `(⊃ $1.9 miss)` says the same thing in a space the rest of the line can
+use.
 
 The **price** is there for the same reason, one level up. The turn's own cost
-sits immediately to the left, so a bare `(cache miss)` leaves you doing the
+sits immediately to the left, so a bare `(⊃ miss)` leaves you doing the
 subtraction yourself to find out whether the miss was most of that figure or a
 rounding error on it — and those two cases call for completely different
 reactions. It is priced off **`$prev`** (below), the prefix that actually had to
 be rebuilt, *not* off the current context: by the time the verdict renders the
 context has already grown past what was cached, and charging today's size to
 yesterday's miss would overstate it.
+
+And the price opens with **`⊃`**, the mirror of the `⊂` that joins the turn to
+the session total two cells later. The glyph always opens toward the *larger*
+figure, and here the larger one is the turn cost sitting **outside** the
+parenthesis, to its left — so it has to face backwards. Read end to end,
+`✻9.6 (⊃ $1.8 miss) ⊂ $29` says "this turn contains $1.80 of rebuilt cache, and
+is itself part of $29". Without the sign the two numbers sit side by side looking
+like a pair to compare, which is exactly the wrong reading: one is a slice of the
+other.
 
 Why it deserves a glyph of its own: cached input is billed at **0.1×**, a cache
 *write* at **1.25×**. Re-sending a 200 K-token prefix uncached is therefore
@@ -549,7 +565,7 @@ hour. On a 5-minute cache: orange at 4 min, red at 5. The old hardcoded
 early, every turn.
 
 The two signals are complements, not duplicates: the **orange clock is a
-forecast** ("you are about to lose it"), the **red `(cache miss)` is a
+forecast** ("you are about to lose it"), the **red `(⊃ $… miss)` is a
 post-mortem** ("you just did").
 
 ---
@@ -559,7 +575,7 @@ post-mortem** ("you just did").
 - Current/last-turn cost is a derived delta. If the very first render of a turn
   lands *after* the model already made an API call, that turn slightly
   undercounts (it self-corrects on the next turn).
-- The `(cache miss)` label and the TTL both need a **readable transcript**. In
+- The `(⊃ $… miss)` label and the TTL both need a **readable transcript**. In
   the newer per-session storage format (the cost-clock fallback branch) there is
   none, so no label is ever shown and the TTL falls back to 300 s.
 - A **context compaction** legitimately invalidates the prefix and will be
@@ -1409,7 +1425,7 @@ fmt_ttl() {
 # Takes the prefix size in tokens, defaulting to the whole current context. The
 # argument exists because the two callers price two different things: the idle
 # clock is forecasting the loss of the context you are sitting on RIGHT NOW,
-# while the "(cache miss)" verdict is pricing a rebuild that ALREADY happened,
+# while the "(⊃ $ miss)" verdict is pricing a rebuild that ALREADY happened,
 # whose size is the prompt that was cached at the time ($prev_prompt) — by then
 # the context has grown past it, so charging today's size to yesterday's miss
 # would overstate it.
@@ -1669,11 +1685,15 @@ if [ -n "$spend_ready" ]; then
   now=$(date +%s)
   idle="$fb_idle"; age_secs="$fb_age_secs"
 
-  # --- Prompt-cache verdict for the CURRENT turn, rendered as a red "(cache
-  # miss)" right after its cost ("$1.2 (cache miss) ⊂ $30"). Spelled out rather
-  # than a bare "!" because the glyph was unreadable: it fires rarely enough that
-  # by the time you see one you no longer remember what it meant, and a lone "!"
-  # next to a number reads as "big number" long before it reads as "cache".
+  # --- Prompt-cache verdict for the CURRENT turn, rendered as a red "(⊃ $ miss)"
+  # right after its cost ("✻1.2 (⊃ $1.2 miss) ⊂ $30"). A word rather than a bare
+  # "!" because the glyph was unreadable: it fires rarely enough that by the time
+  # you see one you no longer remember what it meant, and a lone "!" next to a
+  # number reads as "big number" long before it reads as "cache". One word is
+  # enough, though — "cache" was the half of the label that carried no
+  # information, since the only thing this line can miss IS the prompt cache, and
+  # the segment is already all about token cost. Dropping it buys back six
+  # columns on the most crowded line on the screen.
   # The question it answers is the one you can't see
   # from the price alone: did this turn reuse the cached prefix at 0.1x, or did
   # it rebuild it at 1.25x? A rebuilt 200K prefix is roughly a dollar of pure
@@ -1695,11 +1715,18 @@ if [ -n "$spend_ready" ]; then
   if [ "$turn_cache_read" -ge 0 ] && [ "$prev_prompt" -ge 5000 ] \
      && [ "$turn_cache_read" -lt $((prev_prompt / 2)) ]; then
     # With the price attached, not just the fact. The turn cost sits immediately
-    # to its left, so a bare "(cache miss)" makes you do the subtraction yourself
+    # to its left, so a bare "(miss)" makes you do the subtraction yourself
     # to find out whether the miss was most of that figure or a rounding error on
     # it — and the two cases call for completely different reactions. Priced off
     # $prev_prompt, the prefix that actually had to be rebuilt.
-    cache_bang="${RED} ($(miss_cost "$prev_prompt") cache miss)${RESET}"
+    # "⊃", the mirror of the "⊂" that joins the turn to the session total two
+    # cells later, and mirrored for exactly the reason the glyph exists: it always
+    # opens toward the LARGER figure. Here the larger one is the turn cost sitting
+    # OUTSIDE the parenthesis, to the left, so the sign has to face back at it —
+    # "✻9.6 (⊃ $1.8 miss) ⊂ $29" reads left to right as "this turn contains $1.8
+    # of rebuilt cache, and is itself part of $29". Without it the two numbers
+    # look like a pair to compare rather than a whole and its part.
+    cache_bang="${RED} (⊃ $(miss_cost "$prev_prompt") miss)${RESET}"
   fi
   hookstate="/tmp/claude-turn-${session_id:-default}.state"
   if [ -f "$hookstate" ]; then

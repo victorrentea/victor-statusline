@@ -454,7 +454,7 @@ fmt_ttl() {
 # Takes the prefix size in tokens, defaulting to the whole current context. The
 # argument exists because the two callers price two different things: the idle
 # clock is forecasting the loss of the context you are sitting on RIGHT NOW,
-# while the "(cache miss)" verdict is pricing a rebuild that ALREADY happened,
+# while the "(⊃ $ miss)" verdict is pricing a rebuild that ALREADY happened,
 # whose size is the prompt that was cached at the time ($prev_prompt) — by then
 # the context has grown past it, so charging today's size to yesterday's miss
 # would overstate it.
@@ -714,11 +714,15 @@ if [ -n "$spend_ready" ]; then
   now=$(date +%s)
   idle="$fb_idle"; age_secs="$fb_age_secs"
 
-  # --- Prompt-cache verdict for the CURRENT turn, rendered as a red "(cache
-  # miss)" right after its cost ("$1.2 (cache miss) ⊂ $30"). Spelled out rather
-  # than a bare "!" because the glyph was unreadable: it fires rarely enough that
-  # by the time you see one you no longer remember what it meant, and a lone "!"
-  # next to a number reads as "big number" long before it reads as "cache".
+  # --- Prompt-cache verdict for the CURRENT turn, rendered as a red "(⊃ $ miss)"
+  # right after its cost ("✻1.2 (⊃ $1.2 miss) ⊂ $30"). A word rather than a bare
+  # "!" because the glyph was unreadable: it fires rarely enough that by the time
+  # you see one you no longer remember what it meant, and a lone "!" next to a
+  # number reads as "big number" long before it reads as "cache". One word is
+  # enough, though — "cache" was the half of the label that carried no
+  # information, since the only thing this line can miss IS the prompt cache, and
+  # the segment is already all about token cost. Dropping it buys back six
+  # columns on the most crowded line on the screen.
   # The question it answers is the one you can't see
   # from the price alone: did this turn reuse the cached prefix at 0.1x, or did
   # it rebuild it at 1.25x? A rebuilt 200K prefix is roughly a dollar of pure
@@ -740,11 +744,18 @@ if [ -n "$spend_ready" ]; then
   if [ "$turn_cache_read" -ge 0 ] && [ "$prev_prompt" -ge 5000 ] \
      && [ "$turn_cache_read" -lt $((prev_prompt / 2)) ]; then
     # With the price attached, not just the fact. The turn cost sits immediately
-    # to its left, so a bare "(cache miss)" makes you do the subtraction yourself
+    # to its left, so a bare "(miss)" makes you do the subtraction yourself
     # to find out whether the miss was most of that figure or a rounding error on
     # it — and the two cases call for completely different reactions. Priced off
     # $prev_prompt, the prefix that actually had to be rebuilt.
-    cache_bang="${RED} ($(miss_cost "$prev_prompt") cache miss)${RESET}"
+    # "⊃", the mirror of the "⊂" that joins the turn to the session total two
+    # cells later, and mirrored for exactly the reason the glyph exists: it always
+    # opens toward the LARGER figure. Here the larger one is the turn cost sitting
+    # OUTSIDE the parenthesis, to the left, so the sign has to face back at it —
+    # "✻9.6 (⊃ $1.8 miss) ⊂ $29" reads left to right as "this turn contains $1.8
+    # of rebuilt cache, and is itself part of $29". Without it the two numbers
+    # look like a pair to compare rather than a whole and its part.
+    cache_bang="${RED} (⊃ $(miss_cost "$prev_prompt") miss)${RESET}"
   fi
   hookstate="/tmp/claude-turn-${session_id:-default}.state"
   if [ -f "$hookstate" ]; then
