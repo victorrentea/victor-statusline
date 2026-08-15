@@ -1027,6 +1027,55 @@ fi
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 [ -n "$cwd" ] || cwd=$PWD
 loc=$(basename "$cwd")
+
+# --- Publish it, keyed by the terminal ----------------------------------------
+# Wispr Relay draws the bound terminal's folder on its overlay chip and had no
+# honest way to learn it. Claude Code keeps *two* directories: the session's,
+# which is what `.workspace.current_dir` above carries and what this bar shows,
+# and the process's, which never leaves wherever it was launched — verified on a
+# live session working in wispr-relay, where `lsof -d cwd` on the pid still
+# answered ~/workspace. Reading ~/.claude/projects instead would mean guessing
+# which of several sessions sharing a launch directory a pid belongs to, and a
+# confidently wrong folder is worse than none.
+#
+# **The tty is the only handle both sides hold.** The relay knows it (it binds a
+# Terminal tab by tty); this script can ask for it. `TERM_SESSION_ID` looked
+# ideal — free, already in the environment — but the relay cannot read it back:
+# macOS only lets `ps -E` show a process's environment to its own descendants,
+# so an app launched separately sees nothing (measured: 2926 bytes for a process
+# in this shell's ancestry, 4 for an unrelated terminal's).
+#
+# **The `ps` costs a fork, so it runs only when the answer changes.** This bar
+# re-renders every second in every open session, which is exactly the shape of
+# the load that made everything feel slow once before. The guard is a bash
+# builtin `read` against the last value written — no subprocess — so the steady
+# state costs nothing and the fork happens only when Victor actually changes
+# directory. Everything is best-effort: a status line that breaks over a
+# publishing side-effect is a status line that broke for nothing.
+if [ -n "$cwd" ]; then
+  _pubdir="$HOME/.claude/cwd"
+  # Keyed by $PPID — claude's own pid, free and stable for the life of the
+  # session. A single shared guard file would have several sessions in different
+  # directories invalidating each other's answer every second, which is worse
+  # than no guard at all.
+  _guard="$_pubdir/.last-$PPID"
+  _prev=""
+  [ -r "$_guard" ] && read -r _prev < "$_guard" 2>/dev/null
+  if [ "$_prev" != "$cwd" ]; then
+    # **$PPID, not $$.** Claude Code spawns this script without a controlling
+    # terminal of its own (measured: `??`), but it keeps one itself — so the tty
+    # to publish under is the parent's, which is also the tty the relay binds by.
+    _tty=$(ps -o tty= -p $PPID 2>/dev/null)
+    _tty=${_tty// /}
+    case "$_tty" in
+      ttys*) { mkdir -p "$_pubdir" \
+                 && printf '%s' "$cwd" > "$_pubdir/$_tty" \
+                 && printf '%s' "$cwd" > "$_guard"; } 2>/dev/null || : ;;
+      *) : ;;   # no controlling terminal: nothing the relay could look up
+    esac
+  fi
+  unset _pubdir _guard _prev _tty
+fi
 # ONE git call, deliberately: this bar re-renders every second, so a subprocess
 # here is a per-second cost, not a per-prompt one. Resolving worktrees properly
 # would need two more rev-parse calls, and that is the one thing this segment
