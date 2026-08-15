@@ -454,7 +454,7 @@ fmt_ttl() {
 # Takes the prefix size in tokens, defaulting to the whole current context. The
 # argument exists because the two callers price two different things: the idle
 # clock is forecasting the loss of the context you are sitting on RIGHT NOW,
-# while the "(⊃ $ miss)" verdict is pricing a rebuild that ALREADY happened,
+# while the "+N(miss)=" addend is pricing a rebuild that ALREADY happened,
 # whose size is the prompt that was cached at the time ($prev_prompt) — by then
 # the context has grown past it, so charging today's size to yesterday's miss
 # would overstate it.
@@ -464,21 +464,27 @@ fmt_ttl() {
 # the whole point of the orange phase: "4m ago <= 1h" is a deadline with no stake
 # attached, and a deadline you cannot price is one you cannot decide about.
 #
-# miss_usd is the raw number for arithmetic, miss_cost the same figure formatted
-# for the bar, miss_big the blink threshold as a true/false. All three off one
-# expression, because the threshold test and the displayed price must be the same
-# quantity — a gate computed one way and a price printed another is how you get a
-# bar that blinks while showing a number below its own stated floor.
+# miss_usd is the raw number for arithmetic, miss_num the same figure formatted
+# for the bar, miss_cost that with the "$" glued on, miss_big the blink threshold
+# as a true/false. All of them off one expression, because the threshold test and
+# the displayed price must be the same quantity — a gate computed one way and a
+# price printed another is how you get a bar that blinks while showing a number
+# below its own stated floor.
 miss_usd() {
   _mult=1.15
   [ "${ttl_secs:-300}" -ge 3600 ] && _mult=1.9
   awk -v t="${1:-${used_tokens:-0}}" -v r="${in_rate:-5}" -v m="$_mult" \
     'BEGIN{ printf "%.4f", t/1000000 * r * m }'
 }
-miss_cost() {
+# The bare figure, no currency sign: the turn-cost segment prints its own "$"
+# (or the flower standing in for it) at the head of the cell and then folds the
+# miss in as an addend — "$+2.8(miss)=13.8" — so a second "$" in the middle would
+# be claiming a second unit for the same money.
+miss_num() {
   awk -v c="$(miss_usd "$1")" \
-    'BEGIN{ printf (c >= 10 ? "$%.0f" : "$%.1f"), c }'
+    'BEGIN{ printf (c >= 10 ? "%.0f" : "%.1f"), c }'
 }
+miss_cost() { printf '$%s' "$(miss_num "$1")"; }
 # Is the loss big enough to MOVE for? The gate used to be a flat 100K tokens,
 # which is the wrong unit: what makes a miss worth interrupting you over is the
 # MONEY, and the same 100K is ~19c of Haiku and ~$1.90 of Opus-on-a-1h-TTL.
@@ -714,8 +720,15 @@ if [ -n "$spend_ready" ]; then
   now=$(date +%s)
   idle="$fb_idle"; age_secs="$fb_age_secs"
 
-  # --- Prompt-cache verdict for the CURRENT turn, rendered as a red "(⊃ $ miss)"
-  # right after its cost ("✻1.2 (⊃ $1.2 miss) ⊂ $30"). A word rather than a bare
+  # --- Prompt-cache verdict for the CURRENT turn, rendered INSIDE the turn price
+  # as a red addend: "$+2.8(miss)=13.8 ⊂ $34". The turn cost is not a figure the
+  # miss sits next to, it is a figure the miss is PART OF, so the segment states
+  # the arithmetic instead of leaving it to be done: $2.80 of this turn's $13.80
+  # went on rebuilding the prefix. Every earlier form put the two numbers side by
+  # side — "✻13.8 ($2.8 miss)" — and side by side is the one arrangement that
+  # reads as "compare these", which is precisely the wrong question.
+  #
+  # A word rather than a bare
   # "!" because the glyph was unreadable: it fires rarely enough that by the time
   # you see one you no longer remember what it meant, and a lone "!" next to a
   # number reads as "big number" long before it reads as "cache". One word is
@@ -740,22 +753,21 @@ if [ -n "$spend_ready" ]; then
   case "$turn_cache_read" in ''|*[!0-9-]*) turn_cache_read=-1 ;; esac
   case "$prev_prompt" in ''|*[!0-9]*) prev_prompt=0 ;; esac
   case "$ttl_secs" in ''|*[!0-9]*|0) ttl_secs=300 ;; esac
-  cache_bang=""
+  miss_add=""
   if [ "$turn_cache_read" -ge 0 ] && [ "$prev_prompt" -ge 5000 ] \
      && [ "$turn_cache_read" -lt $((prev_prompt / 2)) ]; then
-    # With the price attached, not just the fact. The turn cost sits immediately
-    # to its left, so a bare "(miss)" makes you do the subtraction yourself
-    # to find out whether the miss was most of that figure or a rounding error on
-    # it — and the two cases call for completely different reactions. Priced off
-    # $prev_prompt, the prefix that actually had to be rebuilt.
-    # "⊃", the mirror of the "⊂" that joins the turn to the session total two
-    # cells later, and mirrored for exactly the reason the glyph exists: it always
-    # opens toward the LARGER figure. Here the larger one is the turn cost sitting
-    # OUTSIDE the parenthesis, to the left, so the sign has to face back at it —
-    # "✻9.6 (⊃ $1.8 miss) ⊂ $29" reads left to right as "this turn contains $1.8
-    # of rebuilt cache, and is itself part of $29". Without it the two numbers
-    # look like a pair to compare rather than a whole and its part.
-    cache_bang="${RED} (⊃ $(miss_cost "$prev_prompt") miss)${RESET}"
+    # With the price attached, not just the fact: a bare "(miss)" makes you do the
+    # subtraction yourself to find out whether the miss was most of the turn or a
+    # rounding error on it — and the two cases call for completely different
+    # reactions. Priced off $prev_prompt, the prefix that actually had to be
+    # rebuilt.
+    #
+    # "+…=" rather than a parenthetical, because "+" and "=" are the two signs
+    # that already mean "part of a sum" to everyone, in one cell each. The RED
+    # stops at the addend: the "=13.8" that follows is the ordinary turn cost and
+    # must stay the colour it has in every other state, or the eye reads the whole
+    # turn as the alarm rather than the $2.80 slice that is one.
+    miss_add="${RED}+$(miss_num "$prev_prompt")(miss)=${RESET}"
   fi
   hookstate="/tmp/claude-turn-${session_id:-default}.state"
   if [ -f "$hookstate" ]; then
@@ -829,7 +841,7 @@ if [ -n "$spend_ready" ]; then
     # The flower stands in for the "$". No cost yet on this turn => print no
     # figure at all and let the bare flower open the segment.
     if [ "$(echo "$turn_cost > 0" | bc -l)" = "1" ]; then
-      turn_money=$(printf '%s%s%s%.1f' "$bloom" "$flower" "$RESET" "$turn_cost")
+      turn_money=$(printf '%s%s%s%s%.1f' "$bloom" "$flower" "$RESET" "$miss_add" "$turn_cost")
     else
       turn_money=""
     fi
@@ -839,7 +851,7 @@ if [ -n "$spend_ready" ]; then
     # idle after a finished turn -> that turn's cost is in turn_cost; just after
     # Enter (turn_cost==0) -> fall back to the previous turn's cost.
     if [ "$(echo "$turn_cost > 0" | bc -l)" = "1" ]; then disp_cost="$turn_cost"; else disp_cost="$prev_turn_cost"; fi
-    turn_money=$(printf '$%.1f' "$disp_cost")
+    turn_money=$(printf '$%s%.1f' "$miss_add" "$disp_cost")
     age_str=""
     [ -n "$age_secs" ] && age_str=$(fmt_age "$age_secs")
     turn_suffix="$age_str"
@@ -871,7 +883,7 @@ if [ -n "$spend_ready" ]; then
   total_money=$(awk -v c="$cost" \
     'BEGIN{ if (c >= 10) printf "$%d", int(c); else printf "$%.1f", int(c*10 + 1e-9)/10 }')
   if [ -n "$turn_money" ]; then
-    spend_seg="${turn_money}${cache_bang}${turn_suffix} ${sep} ${total_money}"
+    spend_seg="${turn_money}${turn_suffix} ${sep} ${total_money}"
   else
     # Nothing billed yet: no figure, so no relation to state either — just the
     # flower and the total ("✻ $12").
