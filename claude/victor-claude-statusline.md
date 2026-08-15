@@ -26,34 +26,34 @@ blooms `·` → `✢` → `✳` → `✻` → `✽` and closes again, one frame 
 same spinner Claude Code draws in front of "Working…"):
 
 ```
-Opus 5XH 50K/1M | ↗98% left / 4:47h | ✻0.5 ⊂ $25 | ai | +24% / 70% / 1d1h
+Opus 5XH 50K/1M | ↗98% left / 4:47 | ✻0.5 ⊂ $25 | ai | +24% / 70% / 1d1h
 ```
 
 Idle, waiting on you (note the ticking "N ago" clock and no flower):
 
 ```
-Opus 5XH 50K/1M | 98% left / 4:47h | $0.1 3m ago ⊂ $25 | ai | +24% / 70% / 1d1h
+Opus 5XH 50K/1M | 98% left / 4:47 | $0.1 3m ago ⊂ $25 | ai | +24% / 70% / 1d1h
 ```
 
 Just after you hit Enter, before the first response has billed anything — **no
 turn price at all**, only the animated flower:
 
 ```
-Opus 5XH 50K/1M | 98% left / 4:47h | ✻ $25 | ai | +24% / 70% / 1d1h
+Opus 5XH 50K/1M | 98% left / 4:47 | ✻ ⊂ $25 | ai | +24% / 70% / 1d1h
 ```
 
 Idle long enough that the prompt cache is gone. The loss is priced either way;
 what changes with the amount is whether it moves. Below $2 it just sits there:
 
 ```
-Opus 5H 170K/1M | ↑87% left / 1:41h | $7.8 >1h ago (miss=$1.6) ⊂ $10 | ai | +15% / 82% / 3wd8h
+Opus 5H 170K/1M | ↑87% left / 1:41 | $7.8 >1h ago (miss=$1.6) ⊂ $10 | ai | +15% / 82% / 3wd8h
 ```
 
 Above $2, `220K`, `>1h` and `$2.1` **blink red** in unison, one second on, one
 second off (§1.1); everything else holds still:
 
 ```
-Opus 5H 220K/1M | ↑87% left / 1:42h | $1.5 >1h ago (miss=$2.1) ⊂ $23 | ai | +15% / 82% / 3wd8h
+Opus 5H 220K/1M | ↑87% left / 1:42 | $1.5 >1h ago (miss=$2.1) ⊂ $23 | ai | +15% / 82% / 3wd8h
 ```
 
 Five `|`-separated segments: **model/effort/context**, **5h quota + burn-rate**,
@@ -67,7 +67,7 @@ as soon as you have what you came for — and the most static segment is the one
 that falls off the right edge first on a narrow terminal.
 
 **`|` separates segments; `/` joins readings of the *same* window** — the 5h
-pair `↗98% left / 4:47h`, and the weekly triple `+24% / 70% / 1d1h` (pace, then
+pair `↗98% left / 4:47`, and the weekly triple `+24% / 70% / 1d1h` (pace, then
 what's left, then how long the window has to run). It also buys back a couple of
 columns per join versus a wordier separator.
 
@@ -196,7 +196,7 @@ parameter expansion, not `sed`: `$ctx_render` is full of ESC and `&` bytes that
 
 ---
 
-## 2. Quota & burn-rate — `↗98% left / 4:47h`
+## 2. Quota & burn-rate — `↗98% left / 4:47`
 
 Tracks the rolling **5-hour** rate-limit window.
 
@@ -204,7 +204,7 @@ Tracks the rolling **5-hour** rate-limit window.
 |-------|---------|--------|
 | `↗` | burn-rate indicator (see below), colored, **leading** the number | derived |
 | `98%` | quota remaining = `100 − used%` | `.rate_limits.five_hour.used_percentage` |
-| `left / 4:47h` | time until the window resets (`H:MMh`, or `Mm` under an hour) | `.rate_limits.five_hour.resets_at` |
+| `left / 4:47` | time until the window resets (`H:MM`, or `Mm` under an hour) | `.rate_limits.five_hour.resets_at` |
 
 The `% left` turns **orange < 15%** and **red < 5%**.
 
@@ -257,7 +257,7 @@ one that says you have plenty is not.
 
 **Quick mental check:** convert time-left to a percentage with
 `minutes_left / 300 × 100`, then compare to `% left`. If they're within ~13% of
-each other, you're on-par (blank). E.g. `4:47h` = 287 min → 96% time left;
+each other, you're on-par (blank). E.g. `4:47` = 287 min → 96% time left;
 against `98%` quota that's `r ≈ 1.02` → on par (no arrow).
 
 ---
@@ -333,8 +333,8 @@ quantity, a piece of the same money.
 **current turn has actually billed yet** (`turn_cost > 0`):
 
 - **working, nothing billed yet** (the 10–20 s between hitting Enter and the
-  first response) → **the flower alone**: `✻ $25`. The previous turn's price
-  disappears the instant you press Enter.
+  first response) → **the flower in place of the figure**: `✻ ⊂ $25`. The
+  previous turn's price disappears the instant you press Enter.
 
   This is the one place where showing a number is worse than showing none. The
   turn-cost slot is the figure you glance at without reading its label, so a
@@ -344,8 +344,13 @@ quantity, a piece of the same money.
   available at that moment: counting has started, no figure yet. (The session
   total stays: it is still correct.)
 
-  Note the flower **stops being a separator** here and simply opens the segment
-  — there are no longer two numbers for it to sit between.
+  The `⊂` **stays** through this state, even with nothing on its left. Dropping
+  it — the earlier rule — meant that the instant the first cost landed the
+  separator appeared from nowhere and shoved the session total two cells to the
+  right, so the one number on screen moved exactly when it started to matter.
+  Holding every cell still costs one glyph and buys a segment that never jumps;
+  and the claim is still true with the left side empty — whatever this turn ends
+  up costing is contained in that total.
 - **working AND turn has cost** → live figure with the flower **in the `$`'s
   place** (e.g. `✻0.5 ⊂ $25`) — it's still adding up. That cell carries no
   information anyway, so the bloom costs no width and nothing shifts when it
@@ -395,7 +400,7 @@ just-hit-Enter window deliberately shows nothing instead.
 ## 3.1 Prompt-cache miss — the red `(2.7⏱)` on the turn price
 
 ```
-Opus 5XH 200K/1M | 98% left / 4:47h | $5.2(2.7⏱) ⊂ $34 | ai | +24% / 70% / 1d1h
+Opus 5XH 200K/1M | 98% left / 4:47 | $5.2(2.7⏱) ⊂ $34 | ai | +24% / 70% / 1d1h
 ```
 
 A red `(2.7⏱)` glued to the turn price means **this turn did not reuse the cached
@@ -615,7 +620,7 @@ once in a while, not every turn.
 
 Three readings of the one window, `/`-separated in the order you ask them: the
 **pace**, then **what's left**, then **how long the window has to run**. `/` is
-the same separator the 5h pair uses (`98% left / 4:47h`) and means the same
+the same separator the 5h pair uses (`98% left / 4:47`) and means the same
 thing here — one window, several readings. It replaced an `=`, which invited
 being read as arithmetic that doesn't hold.
 
@@ -1272,7 +1277,7 @@ if [ -n "$five" ]; then
       m=$(((diff % 3600) / 60))
       until_time=$(date -r "$reset" +%H:%M)
       if [ "$h" -gt 0 ]; then
-        dur=$(printf '%d:%02dh' "$h" "$m")
+        dur=$(printf '%d:%02d' "$h" "$m")
       else
         dur="${m}m"
       fi
@@ -1316,7 +1321,7 @@ if [ -n "$five" ]; then
   else
     pct_part="${ind}${left}%"
   fi
-  # "↗98% left / 4:47h": quota-left and time-left are two readings of the SAME
+  # "↗98% left / 4:47": quota-left and time-left are two readings of the SAME
   # window, joined with "/" rather than the "•" it replaces; "|" stays reserved
   # for segment boundaries, so the eye still parses where the segment ends.
   if [ -n "$dur" ]; then
@@ -1336,7 +1341,7 @@ if [ -n "$five" ]; then
   # hung render. `refreshInterval: 1` in settings.json re-runs this script every
   # second regardless of activity, and the gate's `sleep` runs in a child
   # process, so the main loop's timer keeps firing while the turn is blocked.
-  # Written as 1h45m, deliberately NOT the "4:47h" style of the window countdown
+  # Written as 1h45m, deliberately NOT the "4:47" style of the window countdown
   # sitting next to it — the two are different clocks (wake vs window reset) and
   # should not be mistakable for each other at a glance.
   park="$HOME/.claude/quota-park/$session_id"
@@ -1811,13 +1816,13 @@ if [ -n "$spend_ready" ]; then
   fi
   # Displayed cost + label. Three states, driven by "am I working" AND by whether
   # the current turn has actually billed yet (turn_cost>0):
-  #   working, nothing billed yet (you just hit Enter) -> the animated flower
-  #     ALONE ("✻ $12"). The previous turn's price vanishes the instant you press
-  #     Enter: for the 10-20s before the first response lands there is no current
-  #     cost, and leaving the old number on screen means the one figure you look
-  #     at is silently stale — you read "$1.4" and attribute it to the thing you
-  #     just asked for. Better an empty slot that is honestly empty; the flower
-  #     says "counting has started, no number yet".
+  #   working, nothing billed yet (you just hit Enter) -> the animated flower in
+  #     place of the figure ("✻ ⊂ $12"). The previous turn's price vanishes the
+  #     instant you press Enter: for the 10-20s before the first response lands
+  #     there is no current cost, and leaving the old number on screen means the
+  #     one figure you look at is silently stale — you read "$1.4" and attribute
+  #     it to the thing you just asked for. Better an empty slot that is honestly
+  #     empty; the flower says "counting has started, no number yet".
   #   working AND the current turn has cost -> live figure with the animated
   #     flower STANDING IN FOR THE "$" ("✻0.7 ⊂ $12"). The currency sign is the
   #     one cell in the segment that carries no information — you know the units
@@ -1914,9 +1919,14 @@ if [ -n "$spend_ready" ]; then
   if [ -n "$turn_money" ]; then
     spend_seg="${turn_money}${miss_tag}${turn_suffix} ${sep} ${total_money}"
   else
-    # Nothing billed yet: no figure, so no relation to state either — just the
-    # flower and the total ("✻ $12").
-    spend_seg="${lone} ${total_money}"
+    # Nothing billed yet: the flower stands in for the missing figure, but the
+    # "⊂" stays ("✻ ⊂ $12"). Dropping it was the earlier rule and it made the
+    # segment jump: the moment the first cost landed, "⊂" appeared out of nowhere
+    # and shoved the total two cells right, so the one number you were watching
+    # moved exactly when it started mattering. Keeping the separator through the
+    # empty state holds every cell in place, and it is still true — whatever this
+    # turn ends up costing IS contained in that total, figure or no figure.
+    spend_seg="${lone} ${sep} ${total_money}"
   fi
 fi
 
@@ -2030,7 +2040,7 @@ if [ -n "$week" ]; then
   # number is the "am I OK?" glance, the "% left" is the detail you read second.
   # "/" and not "=": this segment is three readings of ONE window -- pace, what
   # is left, how long it runs -- and "/" is already the separator that means
-  # exactly that everywhere else in this bar ("96% left / 4:44h"). An "=" read
+  # exactly that everywhere else in this bar ("96% left / 4:44"). An "=" read
   # as arithmetic that does not hold; one separator, used consistently, does
   # the same job of saying "these are different quantities" for the same cell.
   if [ -n "$wpace" ]; then

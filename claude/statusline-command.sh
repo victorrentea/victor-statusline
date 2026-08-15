@@ -246,7 +246,7 @@ if [ -n "$five" ]; then
       m=$(((diff % 3600) / 60))
       until_time=$(date -r "$reset" +%H:%M)
       if [ "$h" -gt 0 ]; then
-        dur=$(printf '%d:%02dh' "$h" "$m")
+        dur=$(printf '%d:%02d' "$h" "$m")
       else
         dur="${m}m"
       fi
@@ -290,7 +290,7 @@ if [ -n "$five" ]; then
   else
     pct_part="${ind}${left}%"
   fi
-  # "↗98% left / 4:47h": quota-left and time-left are two readings of the SAME
+  # "↗98% left / 4:47": quota-left and time-left are two readings of the SAME
   # window, joined with "/" rather than the "•" it replaces; "|" stays reserved
   # for segment boundaries, so the eye still parses where the segment ends.
   if [ -n "$dur" ]; then
@@ -310,7 +310,7 @@ if [ -n "$five" ]; then
   # hung render. `refreshInterval: 1` in settings.json re-runs this script every
   # second regardless of activity, and the gate's `sleep` runs in a child
   # process, so the main loop's timer keeps firing while the turn is blocked.
-  # Written as 1h45m, deliberately NOT the "4:47h" style of the window countdown
+  # Written as 1h45m, deliberately NOT the "4:47" style of the window countdown
   # sitting next to it — the two are different clocks (wake vs window reset) and
   # should not be mistakable for each other at a glance.
   park="$HOME/.claude/quota-park/$session_id"
@@ -785,13 +785,13 @@ if [ -n "$spend_ready" ]; then
   fi
   # Displayed cost + label. Three states, driven by "am I working" AND by whether
   # the current turn has actually billed yet (turn_cost>0):
-  #   working, nothing billed yet (you just hit Enter) -> the animated flower
-  #     ALONE ("✻ $12"). The previous turn's price vanishes the instant you press
-  #     Enter: for the 10-20s before the first response lands there is no current
-  #     cost, and leaving the old number on screen means the one figure you look
-  #     at is silently stale — you read "$1.4" and attribute it to the thing you
-  #     just asked for. Better an empty slot that is honestly empty; the flower
-  #     says "counting has started, no number yet".
+  #   working, nothing billed yet (you just hit Enter) -> the animated flower in
+  #     place of the figure ("✻ ⊂ $12"). The previous turn's price vanishes the
+  #     instant you press Enter: for the 10-20s before the first response lands
+  #     there is no current cost, and leaving the old number on screen means the
+  #     one figure you look at is silently stale — you read "$1.4" and attribute
+  #     it to the thing you just asked for. Better an empty slot that is honestly
+  #     empty; the flower says "counting has started, no number yet".
   #   working AND the current turn has cost -> live figure with the animated
   #     flower STANDING IN FOR THE "$" ("✻0.7 ⊂ $12"). The currency sign is the
   #     one cell in the segment that carries no information — you know the units
@@ -888,9 +888,14 @@ if [ -n "$spend_ready" ]; then
   if [ -n "$turn_money" ]; then
     spend_seg="${turn_money}${miss_tag}${turn_suffix} ${sep} ${total_money}"
   else
-    # Nothing billed yet: no figure, so no relation to state either — just the
-    # flower and the total ("✻ $12").
-    spend_seg="${lone} ${total_money}"
+    # Nothing billed yet: the flower stands in for the missing figure, but the
+    # "⊂" stays ("✻ ⊂ $12"). Dropping it was the earlier rule and it made the
+    # segment jump: the moment the first cost landed, "⊂" appeared out of nowhere
+    # and shoved the total two cells right, so the one number you were watching
+    # moved exactly when it started mattering. Keeping the separator through the
+    # empty state holds every cell in place, and it is still true — whatever this
+    # turn ends up costing IS contained in that total, figure or no figure.
+    spend_seg="${lone} ${sep} ${total_money}"
   fi
 fi
 
@@ -1004,7 +1009,7 @@ if [ -n "$week" ]; then
   # number is the "am I OK?" glance, the "% left" is the detail you read second.
   # "/" and not "=": this segment is three readings of ONE window -- pace, what
   # is left, how long it runs -- and "/" is already the separator that means
-  # exactly that everywhere else in this bar ("96% left / 4:44h"). An "=" read
+  # exactly that everywhere else in this bar ("96% left / 4:44"). An "=" read
   # as arithmetic that does not hold; one separator, used consistently, does
   # the same job of saying "these are different quantities" for the same cell.
   if [ -n "$wpace" ]; then
