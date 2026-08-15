@@ -454,7 +454,7 @@ fmt_ttl() {
 # Takes the prefix size in tokens, defaulting to the whole current context. The
 # argument exists because the two callers price two different things: the idle
 # clock is forecasting the loss of the context you are sitting on RIGHT NOW,
-# while the "+N(miss)=" addend is pricing a rebuild that ALREADY happened,
+# while the "+N⏱=" addend is pricing a rebuild that ALREADY happened,
 # whose size is the prompt that was cached at the time ($prev_prompt) — by then
 # the context has grown past it, so charging today's size to yesterday's miss
 # would overstate it.
@@ -478,7 +478,7 @@ miss_usd() {
 }
 # The bare figure, no currency sign: the turn-cost segment prints its own "$"
 # (or the flower standing in for it) at the head of the cell and then folds the
-# miss in as an addend — "$+2.8(miss)=13.8" — so a second "$" in the middle would
+# miss in as an addend — "$+2.8⏱=13.8" — so a second "$" in the middle would
 # be claiming a second unit for the same money.
 miss_num() {
   awk -v c="$(miss_usd "$1")" \
@@ -721,21 +721,12 @@ if [ -n "$spend_ready" ]; then
   idle="$fb_idle"; age_secs="$fb_age_secs"
 
   # --- Prompt-cache verdict for the CURRENT turn, rendered INSIDE the turn price
-  # as a red addend: "$+2.8(miss)=13.8 ⊂ $34". The turn cost is not a figure the
-  # miss sits next to, it is a figure the miss is PART OF, so the segment states
-  # the arithmetic instead of leaving it to be done: $2.80 of this turn's $13.80
-  # went on rebuilding the prefix. Every earlier form put the two numbers side by
-  # side — "✻13.8 ($2.8 miss)" — and side by side is the one arrangement that
-  # reads as "compare these", which is precisely the wrong question.
-  #
-  # A word rather than a bare
-  # "!" because the glyph was unreadable: it fires rarely enough that by the time
-  # you see one you no longer remember what it meant, and a lone "!" next to a
-  # number reads as "big number" long before it reads as "cache". One word is
-  # enough, though — "cache" was the half of the label that carried no
-  # information, since the only thing this line can miss IS the prompt cache, and
-  # the segment is already all about token cost. Dropping it buys back six
-  # columns on the most crowded line on the screen.
+  # as a red addend: "$+2.8⏱=13.8 ⊂ $34". The turn cost is not a figure the miss
+  # sits next to, it is a figure the miss is PART OF, so the segment states the
+  # arithmetic instead of leaving it to be done: $2.80 of this turn's $13.80 went
+  # on rebuilding the prefix. Every earlier form put the two numbers side by
+  # side — "✻13.8 ($2.8 cache miss)" — and side by side is the one arrangement
+  # that reads as "compare these", which is precisely the wrong question.
   # The question it answers is the one you can't see
   # from the price alone: did this turn reuse the cached prefix at 0.1x, or did
   # it rebuild it at 1.25x? A rebuilt 200K prefix is roughly a dollar of pure
@@ -756,7 +747,7 @@ if [ -n "$spend_ready" ]; then
   miss_add=""
   if [ "$turn_cache_read" -ge 0 ] && [ "$prev_prompt" -ge 5000 ] \
      && [ "$turn_cache_read" -lt $((prev_prompt / 2)) ]; then
-    # With the price attached, not just the fact: a bare "(miss)" makes you do the
+    # With the price attached, not just the fact: a bare "⏱" makes you do the
     # subtraction yourself to find out whether the miss was most of the turn or a
     # rounding error on it — and the two cases call for completely different
     # reactions. Priced off $prev_prompt, the prefix that actually had to be
@@ -767,7 +758,17 @@ if [ -n "$spend_ready" ]; then
     # stops at the addend: the "=13.8" that follows is the ordinary turn cost and
     # must stay the colour it has in every other state, or the eye reads the whole
     # turn as the alarm rather than the $2.80 slice that is one.
-    miss_add="${RED}+$(miss_num "$prev_prompt")(miss)=${RESET}"
+    #
+    # "⏱" where the word "(miss)" used to be. A glyph failed here once before —
+    # the original bare red "!" — but for a reason this one does not repeat: "!"
+    # was an ALARM, a mark that says "react" without saying to what, so there was
+    # nothing to remember it by. The stopwatch names the CAUSE. What kills a
+    # prompt cache is a clock running out, it is the same clock the "N ago"
+    # segment two cells over is already counting, and the glyph is that clock. It
+    # also no longer has to carry the meaning alone: sitting between "+" and "=",
+    # the grammar around it already says "this much of the turn, because of this",
+    # so the symbol only has to supply the "this".
+    miss_add="${RED}+$(miss_num "$prev_prompt")⏱=${RESET}"
   fi
   hookstate="/tmp/claude-turn-${session_id:-default}.state"
   if [ -f "$hookstate" ]; then
