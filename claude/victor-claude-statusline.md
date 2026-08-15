@@ -273,7 +273,7 @@ then the **session total**.
 | `✻0.5` | cost of the **current turn** (one decimal) — the **animated flower stands in for the `$`** while it is still adding up |
 | *(or)* `$0.1 3m ago` | when idle: the finished turn's cost, `$` restored, + a ticking "N ago" clock |
 | *(or)* *nothing* | right after Enter, before this turn has billed: **no figure at all**, just the bare flower |
-| `+2.8⏱=` | red — this turn **missed the prompt cache**; $2.80 of the turn's price went on rebuilding the prefix (see §3.1) |
+| `⏱+2.8=` | red — this turn **missed the prompt cache**; $2.80 of the turn's price went on rebuilding the prefix (see §3.1) |
 | `⊂` | subset: the turn's spend is *contained in* the session's (see below) |
 | `$25` | session total, **truncated** — one decimal under `$10` (`$0.3`), whole dollars from `$10` up |
 
@@ -392,17 +392,17 @@ the baseline rolls forward (`prev_turn_cost` in the state file). It now only
 surfaces in the rare *idle-but-nothing-billed* corner; the ordinary
 just-hit-Enter window deliberately shows nothing instead.
 
-## 3.1 Prompt-cache miss — the red `+2.8⏱=` inside the turn price
+## 3.1 Prompt-cache miss — the red `⏱+2.8=` inside the turn price
 
 ```
-Opus 5XH 200K/1M | 98% left / 4:47h | $+2.8⏱=13.8 ⊂ $34 | ai | +24% / 70% / 1d1h
+Opus 5XH 200K/1M | 98% left / 4:47h | $⏱+2.8=13.8 ⊂ $34 | ai | +24% / 70% / 1d1h
 ```
 
-A red `+2.8⏱=` in the middle of the turn price means **this turn did not reuse
+A red `⏱+2.8=` in the middle of the turn price means **this turn did not reuse
 the cached prompt prefix** — it paid to build it again. Read it as the sum it is:
 **$2.80 of this turn's $13.80 went on the rebuild**, and the $13.80 is in turn
 part of the session's $34. While the turn is still running the flower stands in
-for the leading `$` exactly as it does without a miss (`✻+2.8⏱=13.8`), so nothing
+for the leading `$` exactly as it does without a miss (`✻⏱+2.8=13.8`), so nothing
 about the animation or the width changes.
 
 **It is written as arithmetic because it is arithmetic.** Every earlier version
@@ -430,8 +430,15 @@ word entirely, and the objection to `!` does not transfer: the stopwatch names
 the **cause**, not the severity. What kills a prompt cache is a clock running
 out; it is the same clock the `N ago` reading two cells over is already counting;
 the glyph *is* that clock. It also no longer has to carry the meaning by itself —
-wedged between `+` and `=`, the grammar around it already says "this much of the
-turn, because of this", so the symbol only supplies the "this".
+the `+…=` around it already says "this much of the turn", so the symbol only
+supplies the "because of what".
+
+It **leads** the addend — `⏱+2.8=`, not `+2.8⏱=` — because a label is read before
+the thing it labels. The clock announces why the next figure exists, so by the
+time the eye reaches `+2.8` the reason is already in hand; trailing, it turned up
+as an afterthought on a number you had already started explaining to yourself.
+Leading also leaves `+…=` unbroken, so the arithmetic reads in one sweep instead
+of straddling a symbol.
 
 The **price** is not optional. A bare `⏱` leaves you doing the subtraction
 yourself to find out whether the miss was most of the turn or a rounding error on
@@ -575,7 +582,7 @@ hour. On a 5-minute cache: orange at 4 min, red at 5. The old hardcoded
 early, every turn.
 
 The two signals are complements, not duplicates: the **orange clock is a
-forecast** ("you are about to lose it"), the **red `+…⏱=` is a
+forecast** ("you are about to lose it"), the **red `⏱+…=` is a
 post-mortem** ("you just did").
 
 ---
@@ -585,7 +592,7 @@ post-mortem** ("you just did").
 - Current/last-turn cost is a derived delta. If the very first render of a turn
   lands *after* the model already made an API call, that turn slightly
   undercounts (it self-corrects on the next turn).
-- The `+…⏱=` marker and the TTL both need a **readable transcript**. In
+- The `⏱+…=` marker and the TTL both need a **readable transcript**. In
   the newer per-session storage format (the cost-clock fallback branch) there is
   none, so no label is ever shown and the TTL falls back to 300 s.
 - A **context compaction** legitimately invalidates the prefix and will be
@@ -1435,7 +1442,7 @@ fmt_ttl() {
 # Takes the prefix size in tokens, defaulting to the whole current context. The
 # argument exists because the two callers price two different things: the idle
 # clock is forecasting the loss of the context you are sitting on RIGHT NOW,
-# while the "+N⏱=" addend is pricing a rebuild that ALREADY happened,
+# while the "⏱+N=" addend is pricing a rebuild that ALREADY happened,
 # whose size is the prompt that was cached at the time ($prev_prompt) — by then
 # the context has grown past it, so charging today's size to yesterday's miss
 # would overstate it.
@@ -1459,7 +1466,7 @@ miss_usd() {
 }
 # The bare figure, no currency sign: the turn-cost segment prints its own "$"
 # (or the flower standing in for it) at the head of the cell and then folds the
-# miss in as an addend — "$+2.8⏱=13.8" — so a second "$" in the middle would
+# miss in as an addend — "$⏱+2.8=13.8" — so a second "$" in the middle would
 # be claiming a second unit for the same money.
 miss_num() {
   awk -v c="$(miss_usd "$1")" \
@@ -1702,7 +1709,7 @@ if [ -n "$spend_ready" ]; then
   idle="$fb_idle"; age_secs="$fb_age_secs"
 
   # --- Prompt-cache verdict for the CURRENT turn, rendered INSIDE the turn price
-  # as a red addend: "$+2.8⏱=13.8 ⊂ $34". The turn cost is not a figure the miss
+  # as a red addend: "$⏱+2.8=13.8 ⊂ $34". The turn cost is not a figure the miss
   # sits next to, it is a figure the miss is PART OF, so the segment states the
   # arithmetic instead of leaving it to be done: $2.80 of this turn's $13.80 went
   # on rebuilding the prefix. Every earlier form put the two numbers side by
@@ -1745,11 +1752,15 @@ if [ -n "$spend_ready" ]; then
     # was an ALARM, a mark that says "react" without saying to what, so there was
     # nothing to remember it by. The stopwatch names the CAUSE. What kills a
     # prompt cache is a clock running out, it is the same clock the "N ago"
-    # segment two cells over is already counting, and the glyph is that clock. It
-    # also no longer has to carry the meaning alone: sitting between "+" and "=",
-    # the grammar around it already says "this much of the turn, because of this",
-    # so the symbol only has to supply the "this".
-    miss_add="${RED}+$(miss_num "$prev_prompt")⏱=${RESET}"
+    # segment two cells over is already counting, and the glyph is that clock.
+    #
+    # It leads the addend rather than trailing it ("⏱+2.8=", not "+2.8⏱="),
+    # because a label is read before what it labels: the clock announces WHY the
+    # next figure exists, and by the time the eye reaches "+2.8" the reason is
+    # already in hand. Trailing, it arrived as an afterthought on a number you had
+    # begun explaining to yourself. It also keeps the "+…=" pair unbroken, so the
+    # arithmetic reads in one sweep instead of straddling a symbol.
+    miss_add="${RED}⏱+$(miss_num "$prev_prompt")=${RESET}"
   fi
   hookstate="/tmp/claude-turn-${session_id:-default}.state"
   if [ -f "$hookstate" ]; then

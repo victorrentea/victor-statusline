@@ -454,7 +454,7 @@ fmt_ttl() {
 # Takes the prefix size in tokens, defaulting to the whole current context. The
 # argument exists because the two callers price two different things: the idle
 # clock is forecasting the loss of the context you are sitting on RIGHT NOW,
-# while the "+N⏱=" addend is pricing a rebuild that ALREADY happened,
+# while the "⏱+N=" addend is pricing a rebuild that ALREADY happened,
 # whose size is the prompt that was cached at the time ($prev_prompt) — by then
 # the context has grown past it, so charging today's size to yesterday's miss
 # would overstate it.
@@ -478,7 +478,7 @@ miss_usd() {
 }
 # The bare figure, no currency sign: the turn-cost segment prints its own "$"
 # (or the flower standing in for it) at the head of the cell and then folds the
-# miss in as an addend — "$+2.8⏱=13.8" — so a second "$" in the middle would
+# miss in as an addend — "$⏱+2.8=13.8" — so a second "$" in the middle would
 # be claiming a second unit for the same money.
 miss_num() {
   awk -v c="$(miss_usd "$1")" \
@@ -721,7 +721,7 @@ if [ -n "$spend_ready" ]; then
   idle="$fb_idle"; age_secs="$fb_age_secs"
 
   # --- Prompt-cache verdict for the CURRENT turn, rendered INSIDE the turn price
-  # as a red addend: "$+2.8⏱=13.8 ⊂ $34". The turn cost is not a figure the miss
+  # as a red addend: "$⏱+2.8=13.8 ⊂ $34". The turn cost is not a figure the miss
   # sits next to, it is a figure the miss is PART OF, so the segment states the
   # arithmetic instead of leaving it to be done: $2.80 of this turn's $13.80 went
   # on rebuilding the prefix. Every earlier form put the two numbers side by
@@ -764,11 +764,15 @@ if [ -n "$spend_ready" ]; then
     # was an ALARM, a mark that says "react" without saying to what, so there was
     # nothing to remember it by. The stopwatch names the CAUSE. What kills a
     # prompt cache is a clock running out, it is the same clock the "N ago"
-    # segment two cells over is already counting, and the glyph is that clock. It
-    # also no longer has to carry the meaning alone: sitting between "+" and "=",
-    # the grammar around it already says "this much of the turn, because of this",
-    # so the symbol only has to supply the "this".
-    miss_add="${RED}+$(miss_num "$prev_prompt")⏱=${RESET}"
+    # segment two cells over is already counting, and the glyph is that clock.
+    #
+    # It leads the addend rather than trailing it ("⏱+2.8=", not "+2.8⏱="),
+    # because a label is read before what it labels: the clock announces WHY the
+    # next figure exists, and by the time the eye reaches "+2.8" the reason is
+    # already in hand. Trailing, it arrived as an afterthought on a number you had
+    # begun explaining to yourself. It also keeps the "+…=" pair unbroken, so the
+    # arithmetic reads in one sweep instead of straddling a symbol.
+    miss_add="${RED}⏱+$(miss_num "$prev_prompt")=${RESET}"
   fi
   hookstate="/tmp/claude-turn-${session_id:-default}.state"
   if [ -f "$hookstate" ]; then
