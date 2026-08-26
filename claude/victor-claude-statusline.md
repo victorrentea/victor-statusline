@@ -760,14 +760,14 @@ from outside**, and something else on this Mac needs it.
 Claude Code keeps two directories. The session's — `.workspace.current_dir`,
 what this segment shows, what moves when you move — and the process's, which
 stays wherever the session was launched for as long as it lives. Measured on a
-live session working in `wispr-relay`: `lsof -d cwd` on the pid still answered
+live session working in `walkie-talkie`: `lsof -d cwd` on the pid still answered
 `~/workspace`. So an outside observer holding the pid learns the launch
 directory and nothing else. Reading `~/.claude/projects/` instead means guessing
 which of several sessions sharing a launch directory a given pid belongs to,
 and a confidently wrong answer is worse than none.
 
 **Keyed by the tty, because that is the only handle both sides hold.** The
-consumer here is Wispr Relay, which binds a Terminal tab *by tty* and draws its
+consumer here is Walkie Talkie, which binds a Terminal tab *by tty* and draws its
 folder on an overlay chip. `TERM_SESSION_ID` would have been the cheaper key —
 free, already in the environment — and cannot be read back: macOS shows a
 process's environment only to its own descendants, so a separately launched app
@@ -2072,11 +2072,11 @@ cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 loc=$(basename "$cwd")
 
 # --- Publish it, keyed by the terminal ----------------------------------------
-# Wispr Relay draws the bound terminal's folder on its overlay chip and had no
+# Walkie Talkie draws the bound terminal's folder on its overlay chip and had no
 # honest way to learn it. Claude Code keeps *two* directories: the session's,
 # which is what `.workspace.current_dir` above carries and what this bar shows,
 # and the process's, which never leaves wherever it was launched — verified on a
-# live session working in wispr-relay, where `lsof -d cwd` on the pid still
+# live session working in walkie-talkie, where `lsof -d cwd` on the pid still
 # answered ~/workspace. Reading ~/.claude/projects instead would mean guessing
 # which of several sessions sharing a launch directory a pid belongs to, and a
 # confidently wrong folder is worse than none.

@@ -1037,11 +1037,11 @@ cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 loc=$(basename "$cwd")
 
 # --- Publish it, keyed by the terminal ----------------------------------------
-# Wispr Relay draws the bound terminal's folder on its overlay chip and had no
+# Walkie Talkie draws the bound terminal's folder on its overlay chip and had no
 # honest way to learn it. Claude Code keeps *two* directories: the session's,
 # which is what `.workspace.current_dir` above carries and what this bar shows,
 # and the process's, which never leaves wherever it was launched — verified on a
-# live session working in wispr-relay, where `lsof -d cwd` on the pid still
+# live session working in walkie-talkie, where `lsof -d cwd` on the pid still
 # answered ~/workspace. Reading ~/.claude/projects instead would mean guessing
 # which of several sessions sharing a launch directory a pid belongs to, and a
 # confidently wrong folder is worse than none.
