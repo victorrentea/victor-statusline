@@ -903,7 +903,7 @@ if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
   out="$out | $spend_seg"
 fi
 
-# --- Weekly quota, last cell of the bar: "+6% / 27% / 1wd1h"
+# --- Weekly quota, last cell of the bar: "+6% ⊂ 27% / 1wd1h"
 # The 5h segment answers "can I keep going right now"; this one answers the
 # slower question — am I going to run out of week before the week runs out.
 # Three numbers, in the order you actually ask them:
@@ -1007,13 +1007,16 @@ if [ -n "$week" ]; then
   fi
   # Pace LEADS the absolute figure, same reasoning as the 5h arrow: the signed
   # number is the "am I OK?" glance, the "% left" is the detail you read second.
-  # "/" and not "=": this segment is three readings of ONE window -- pace, what
-  # is left, how long it runs -- and "/" is already the separator that means
-  # exactly that everywhere else in this bar ("96% left / 4:44"). An "=" read
-  # as arithmetic that does not hold; one separator, used consistently, does
-  # the same job of saying "these are different quantities" for the same cell.
+  # The separator between them is "⊂", the same subset sign the spend cell
+  # uses for "$0.6 ⊂ $3": the pace is not a sibling of the "% left", it is a
+  # SLICE OF IT -- "+6% ⊂ 27%" says six of the twenty-seven points still in
+  # the window are slack you are ahead by. A "/" put the two on equal footing
+  # and invited reading them as unrelated readings; "⊂" spends the same one
+  # character to say which one contains the other. The remaining "/" before the
+  # duration stays -- the time left really IS a separate reading of the window,
+  # which is what "/" means everywhere else in this bar ("96% left / 4:44").
   if [ -n "$wpace" ]; then
-    week_seg="${wpace} / ${wleft_str}"
+    week_seg="${wpace} ⊂ ${wleft_str}"
   else
     week_seg="$wleft_str"
   fi

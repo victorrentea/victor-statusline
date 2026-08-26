@@ -26,34 +26,34 @@ blooms `·` → `✢` → `✳` → `✻` → `✽` and closes again, one frame 
 same spinner Claude Code draws in front of "Working…"):
 
 ```
-Opus 5XH 50K/1M | ↗98% left / 4:47 | ✻0.5 ⊂ $25 | ai | +24% / 70% / 1d1h
+Opus 5XH 50K/1M | ↗98% left / 4:47 | ✻0.5 ⊂ $25 | ai | +24% ⊂ 70% / 1d1h
 ```
 
 Idle, waiting on you (note the ticking "N ago" clock and no flower):
 
 ```
-Opus 5XH 50K/1M | 98% left / 4:47 | $0.1 3m ago ⊂ $25 | ai | +24% / 70% / 1d1h
+Opus 5XH 50K/1M | 98% left / 4:47 | $0.1 3m ago ⊂ $25 | ai | +24% ⊂ 70% / 1d1h
 ```
 
 Just after you hit Enter, before the first response has billed anything — **no
 turn price at all**, only the animated flower:
 
 ```
-Opus 5XH 50K/1M | 98% left / 4:47 | ✻ ⊂ $25 | ai | +24% / 70% / 1d1h
+Opus 5XH 50K/1M | 98% left / 4:47 | ✻ ⊂ $25 | ai | +24% ⊂ 70% / 1d1h
 ```
 
 Idle long enough that the prompt cache is gone. The loss is priced either way;
 what changes with the amount is whether it moves. Below $2 it just sits there:
 
 ```
-Opus 5H 170K/1M | ↑87% left / 1:41 | $7.8 >1h ago (miss=$1.6) ⊂ $10 | ai | +15% / 82% / 3wd8h
+Opus 5H 170K/1M | ↑87% left / 1:41 | $7.8 >1h ago (miss=$1.6) ⊂ $10 | ai | +15% ⊂ 82% / 3wd8h
 ```
 
 Above $2, `220K`, `>1h` and `$2.1` **blink red** in unison, one second on, one
 second off (§1.1); everything else holds still:
 
 ```
-Opus 5H 220K/1M | ↑87% left / 1:42 | $1.5 >1h ago (miss=$2.1) ⊂ $23 | ai | +15% / 82% / 3wd8h
+Opus 5H 220K/1M | ↑87% left / 1:42 | $1.5 >1h ago (miss=$2.1) ⊂ $23 | ai | +15% ⊂ 82% / 3wd8h
 ```
 
 Five `|`-separated segments: **model/effort/context**, **5h quota + burn-rate**,
@@ -67,7 +67,7 @@ as soon as you have what you came for — and the most static segment is the one
 that falls off the right edge first on a narrow terminal.
 
 **`|` separates segments; `/` joins readings of the *same* window** — the 5h
-pair `↗98% left / 4:47`, and the weekly triple `+24% / 70% / 1d1h` (pace, then
+pair `↗98% left / 4:47`, and the weekly triple `+24% ⊂ 70% / 1d1h` (pace, then
 what's left, then how long the window has to run). It also buys back a couple of
 columns per join versus a wordier separator.
 
@@ -400,7 +400,7 @@ just-hit-Enter window deliberately shows nothing instead.
 ## 3.1 Prompt-cache miss — the red `(2.7⏱)` on the turn price
 
 ```
-Opus 5XH 200K/1M | 98% left / 4:47 | $5.2(2.7⏱) ⊂ $34 | ai | +24% / 70% / 1d1h
+Opus 5XH 200K/1M | 98% left / 4:47 | $5.2(2.7⏱) ⊂ $34 | ai | +24% ⊂ 70% / 1d1h
 ```
 
 A red `(2.7⏱)` glued to the turn price means **this turn did not reuse the cached
@@ -610,7 +610,7 @@ post-mortem** ("you just did").
 
 ---
 
-## 4. Weekly quota — `+24% / 70% / 1d1h`
+## 4. Weekly quota — `+24% ⊂ 70% / 1d1h`
 
 The **last** segment, tracking the rolling **7-day** (604800s) rate-limit window.
 Segment 2 answers *"can I keep going right now"*; this one answers the slower
@@ -618,28 +618,32 @@ question — *am I going to run out of week before the week runs out*. It sits a
 the far end because it is the slowest-moving figure on the bar: you consult it
 once in a while, not every turn.
 
-Three readings of the one window, `/`-separated in the order you ask them: the
-**pace**, then **what's left**, then **how long the window has to run**. `/` is
-the same separator the 5h pair uses (`98% left / 4:47`) and means the same
-thing here — one window, several readings. It replaced an `=`, which invited
-being read as arithmetic that doesn't hold.
+Three readings of the one window, in the order you ask them: the **pace**, then
+**what's left**, then **how long the window has to run**. The last join is a `/`,
+the same separator the 5h pair uses (`98% left / 4:47`) and meaning the same
+thing here — one window, several readings. The **first** join is a `⊂`, because
+those two readings are not siblings: see below.
 
 | Piece | Meaning | Source |
 |-------|---------|--------|
 | `+24%` | pace: **percentage points** off a straight line, `elapsed% − used%` | derived |
-| `/` | separator: three readings of one window (see below) | — |
+| `⊂` | subset: the pace is a *slice of* what's left (see below) | — |
 | `70%` | quota remaining this week = `100 − used%` | `.rate_limits.seven_day.used_percentage` |
 | `1d1h` | **working** time until the weekly window resets (weekends excluded) | `.rate_limits.seven_day.resets_at` |
 
 Pace **leads** the absolute figure, mirroring the 5h arrow: the signed number is
 the "am I OK?" glance, the `% left` is the detail you read second.
 
-The `=` between them is **punctuation, not arithmetic**. Without it, `-19% 27%`
-is two bare percentages jammed together with nothing signalling they're different
-quantities — the eye tries to relate them and stalls. The `=` makes the pair scan
-as a single statement ("19% behind, which leaves 27%") for the price of one cell.
+The separator between them is **`⊂`**, the same subset sign [the spend
+cell](#3-spend--05--25) uses for `$0.6 ⊂ $3`, and for the same reason: the two
+figures are not siblings, one is *contained in* the other. `+6% ⊂ 27%` says six
+of the twenty-seven points still in the window are slack you are ahead by.
+Without a separator, `+6% 27%` is two bare percentages jammed together with
+nothing signalling they're different quantities — the eye tries to relate them
+and stalls. A `/` (the earlier rule, and an `=` before that) at least separated
+them, but put them on equal footing and left the reader to guess the relation.
 A worked example of the general rule: when two adjacent numbers share a unit,
-spend a character telling the reader they don't share a *meaning*.
+spend a character telling the reader how their *meanings* relate.
 
 `% left` uses the same thresholds as the 5h segment: **orange < 15%**, **red < 5%**.
 
@@ -1934,7 +1938,7 @@ if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
   out="$out | $spend_seg"
 fi
 
-# --- Weekly quota, last cell of the bar: "+6% / 27% / 1wd1h"
+# --- Weekly quota, last cell of the bar: "+6% ⊂ 27% / 1wd1h"
 # The 5h segment answers "can I keep going right now"; this one answers the
 # slower question — am I going to run out of week before the week runs out.
 # Three numbers, in the order you actually ask them:
@@ -2038,13 +2042,16 @@ if [ -n "$week" ]; then
   fi
   # Pace LEADS the absolute figure, same reasoning as the 5h arrow: the signed
   # number is the "am I OK?" glance, the "% left" is the detail you read second.
-  # "/" and not "=": this segment is three readings of ONE window -- pace, what
-  # is left, how long it runs -- and "/" is already the separator that means
-  # exactly that everywhere else in this bar ("96% left / 4:44"). An "=" read
-  # as arithmetic that does not hold; one separator, used consistently, does
-  # the same job of saying "these are different quantities" for the same cell.
+  # The separator between them is "⊂", the same subset sign the spend cell
+  # uses for "$0.6 ⊂ $3": the pace is not a sibling of the "% left", it is a
+  # SLICE OF IT -- "+6% ⊂ 27%" says six of the twenty-seven points still in
+  # the window are slack you are ahead by. A "/" put the two on equal footing
+  # and invited reading them as unrelated readings; "⊂" spends the same one
+  # character to say which one contains the other. The remaining "/" before the
+  # duration stays -- the time left really IS a separate reading of the window,
+  # which is what "/" means everywhere else in this bar ("96% left / 4:44").
   if [ -n "$wpace" ]; then
-    week_seg="${wpace} / ${wleft_str}"
+    week_seg="${wpace} ⊂ ${wleft_str}"
   else
     week_seg="$wleft_str"
   fi
