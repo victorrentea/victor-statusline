@@ -245,8 +245,15 @@ if [ -n "$five" ]; then
       h=$((diff / 3600))
       m=$(((diff % 3600) / 60))
       until_time=$(date -r "$reset" +%H:%M)
+      # "1h23", not "1:23". A colon is how a WALL CLOCK is written, and this
+      # segment has a real wall clock in it ($until_time, the reset hour), so
+      # "1:23" invited exactly one misreading — a time of day rather than the
+      # time still to run. Unit letters cannot be misread as an hour. Under an
+      # hour it is already "23m" and stays that way; the "h" only shows up when
+      # there are hours to show, and the minutes stay zero-padded behind it
+      # ("1h05") so the field does not change width as the hour drains.
       if [ "$h" -gt 0 ]; then
-        dur=$(printf '%d:%02d' "$h" "$m")
+        dur=$(printf '%dh%02d' "$h" "$m")
       else
         dur="${m}m"
       fi
@@ -281,7 +288,7 @@ if [ -n "$five" ]; then
   # the part that has to go FIRST: it is computed from quota-left over
   # time-left, so a reading frozen early in the window scores a huge surplus and
   # paints a confident green "↑" — the bar's single most reassuring glyph — at
-  # precisely the moment it knows least. "↑78% left / 19m" was that failure: not
+  # precisely the moment it knows least. "↑78% / 19m left" was that failure: not
   # a wrong number politely displayed, but a wrong number ENDORSED. A stale
   # figure is still the best one available and is still shown; what it loses is
   # the right to be believed.
@@ -290,11 +297,20 @@ if [ -n "$five" ]; then
   else
     pct_part="${ind}${left}%"
   fi
-  # "↗98% left / 4:47": quota-left and time-left are two readings of the SAME
+  # "↗98% / 1h23 left": quota-left and time-left are two readings of the SAME
   # window, joined with "/" rather than the "•" it replaces; "|" stays reserved
   # for segment boundaries, so the eye still parses where the segment ends.
+  #
+  # "left" sits at the END, after both figures, rather than glued to the
+  # percentage. It was true of both readings all along -- 98% of quota left,
+  # 4:47 of window left -- and stating it after the pair lets one word cover
+  # them both instead of labelling the first and leaving the second to be
+  # inferred. It also stops the word from splitting the two numbers you are
+  # comparing: "98% / 1h23" is one glance, "98% left / 1h23" is a glance with a
+  # word wedged into it. With no duration to show, the word stays where it has
+  # to be, on the only figure there is.
   if [ -n "$dur" ]; then
-    body="${pct_part} left / ${dur}"
+    body="${pct_part} / ${dur} left"
   else
     body="${pct_part} left"
   fi
@@ -310,9 +326,12 @@ if [ -n "$five" ]; then
   # hung render. `refreshInterval: 1` in settings.json re-runs this script every
   # second regardless of activity, and the gate's `sleep` runs in a child
   # process, so the main loop's timer keeps firing while the turn is blocked.
-  # Written as 1h45m, deliberately NOT the "4:47" style of the window countdown
-  # sitting next to it — the two are different clocks (wake vs window reset) and
-  # should not be mistakable for each other at a glance.
+  # Written as 1h45m. This used to be the whole distinction from the window
+  # countdown next to it, which was "4:47" — two different clocks (wake vs
+  # window reset) told apart by their shape alone. The window countdown is now
+  # "1h23" itself, so the shapes no longer separate them and two other things
+  # do, both stronger than a punctuation mark: the 💤 that always prefixes this
+  # one, and the "left" that always follows the other.
   park="$HOME/.claude/quota-park/$session_id"
   if [ -n "$session_id" ] && [ -f "$park" ]; then
     pwake=$(cat "$park" 2>/dev/null)
@@ -1025,7 +1044,7 @@ if [ -n "$week" ]; then
   # not a second cell. The pair also gets narrower, in the one cell that already
   # carries three readings. The "/" before the duration stays -- the time left
   # really IS a separate reading of the window, which is what "/" means
-  # everywhere else in this bar ("96% left / 4:44").
+  # everywhere else in this bar ("96% / 4h44 left").
   if [ -n "$wpace" ]; then
     week_seg="${wpace}${wleft_str}"
   else
