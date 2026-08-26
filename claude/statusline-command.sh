@@ -326,12 +326,15 @@ if [ -n "$five" ]; then
   # hung render. `refreshInterval: 1` in settings.json re-runs this script every
   # second regardless of activity, and the gate's `sleep` runs in a child
   # process, so the main loop's timer keeps firing while the turn is blocked.
-  # Written as 1h45m. This used to be the whole distinction from the window
-  # countdown next to it, which was "4:47" — two different clocks (wake vs
-  # window reset) told apart by their shape alone. The window countdown is now
-  # "1h23" itself, so the shapes no longer separate them and two other things
-  # do, both stronger than a punctuation mark: the 💤 that always prefixes this
-  # one, and the "left" that always follows the other.
+  # Written "1h45", the SAME duration shape the window countdown next to it now
+  # uses. It used to be "1h45m" against that one's "4:47", and the difference in
+  # shape was the whole thing keeping two clocks (wake vs window reset) apart.
+  # That job now belongs to the two labels that are always present and never
+  # ambiguous — the 💤 prefixing this one, the "left" trailing the other — which
+  # frees the numbers to be written the one way durations are written in this
+  # bar. Trailing "m" is kept only where there is no hour to name the unit
+  # ("45m", "<1m"): there, the letter is the only thing saying what the digits
+  # measure.
   park="$HOME/.claude/quota-park/$session_id"
   if [ -n "$session_id" ] && [ -f "$park" ]; then
     pwake=$(cat "$park" 2>/dev/null)
@@ -341,7 +344,7 @@ if [ -n "$five" ]; then
       ph=$((pleft / 3600))
       pm=$(((pleft % 3600) / 60))
       if [ "$ph" -gt 0 ]; then
-        pfmt="${ph}h${pm}m"
+        pfmt=$(printf '%dh%02d' "$ph" "$pm")
       elif [ "$pm" -gt 0 ]; then
         pfmt="${pm}m"
       else
