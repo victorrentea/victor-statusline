@@ -26,34 +26,34 @@ blooms `·` → `✢` → `✳` → `✻` → `✽` and closes again, one frame 
 same spinner Claude Code draws in front of "Working…"):
 
 ```
-Opus 5XH 50K/1M | ↗98% left / 4:47 | ✻0.5 ⊂ $25 | ai | +24% ⊂ 70% / 1d1h
+Opus 5XH 50K/1M | ↗98% left / 4:47 | ✻0.5 ⊂ $25 | ai | (+24)70% / 1d1h
 ```
 
-Idle, waiting on you (note the ticking "N ago" clock and no flower):
+Idle, waiting on you (note the ticking "-N" clock and no flower):
 
 ```
-Opus 5XH 50K/1M | 98% left / 4:47 | $0.1 3m ago ⊂ $25 | ai | +24% ⊂ 70% / 1d1h
+Opus 5XH 50K/1M | 98% left / 4:47 | $0.1 -3m ⊂ $25 | ai | (+24)70% / 1d1h
 ```
 
 Just after you hit Enter, before the first response has billed anything — **no
 turn price at all**, only the animated flower:
 
 ```
-Opus 5XH 50K/1M | 98% left / 4:47 | ✻ ⊂ $25 | ai | +24% ⊂ 70% / 1d1h
+Opus 5XH 50K/1M | 98% left / 4:47 | ✻ ⊂ $25 | ai | (+24)70% / 1d1h
 ```
 
 Idle long enough that the prompt cache is gone. The loss is priced either way;
 what changes with the amount is whether it moves. Below $2 it just sits there:
 
 ```
-Opus 5H 170K/1M | ↑87% left / 1:41 | $7.8 >1h ago (miss=$1.6) ⊂ $10 | ai | +15% ⊂ 82% / 3wd8h
+Opus 5H 170K/1M | ↑87% left / 1:41 | $7.8 >1h (miss=$1.6) ⊂ $10 | ai | (+15)82% / 3wd8h
 ```
 
 Above $2, `220K`, `>1h` and `$2.1` **blink red** in unison, one second on, one
 second off (§1.1); everything else holds still:
 
 ```
-Opus 5H 220K/1M | ↑87% left / 1:42 | $1.5 >1h ago (miss=$2.1) ⊂ $23 | ai | +15% ⊂ 82% / 3wd8h
+Opus 5H 220K/1M | ↑87% left / 1:42 | $1.5 >1h (miss=$2.1) ⊂ $23 | ai | (+15)82% / 3wd8h
 ```
 
 Five `|`-separated segments: **model/effort/context**, **5h quota + burn-rate**,
@@ -67,7 +67,7 @@ as soon as you have what you came for — and the most static segment is the one
 that falls off the right edge first on a narrow terminal.
 
 **`|` separates segments; `/` joins readings of the *same* window** — the 5h
-pair `↗98% left / 4:47`, and the weekly triple `+24% ⊂ 70% / 1d1h` (pace, then
+pair `↗98% left / 4:47`, and the weekly triple `(+24)70% / 1d1h` (pace, then
 what's left, then how long the window has to run). It also buys back a couple of
 columns per join versus a wordier separator.
 
@@ -109,7 +109,7 @@ priority order:
 | it is **about to expire** (idle ≥ 0.8 × TTL) | orange / normal |
 | context is simply **enormous** (> 300K tokens) | red, **static** |
 
-The first two **also blink the `N ago` clock and its `miss=$…` price**, in the
+The first two **also blink the `-N` clock and its `miss=$…` price**, in the
 same colour on the same beat, and that pairing is the entire point: the clock
 says how much time the cache has left, the token count says how much that cache
 is *worth*, and the price says it in money. Each alone answers a fraction of "is
@@ -131,9 +131,9 @@ Two deliberate choices:
   terminal's own contrast instead of white-on-dark-red, and on the off-beat the
   text is simply *normal* — fully legible half the time by construction, so the
   figure never has to be read through the alarm.
-- **Only the variables blink.** In `51m ago > 5m (miss=$1.7)`, the parts that
-  move are `51m` and `$1.7`. The scaffolding around them (`ago`, `> 5m`,
-  `miss=`) says how to read those two figures and holds still; blinking it too
+- **Only the variables blink.** In `-51m > 5m (miss=$1.7)`, the parts that
+  move are `-51m` and `$1.7`. The scaffolding around them (`> 5m`, `miss=`)
+  says how to read those two figures and holds still; blinking it too
   just widened the flashing block into a bar of moving text you had to wait out.
 
 ### Reporting and alarming are two different thresholds
@@ -148,8 +148,8 @@ would cost more than **$2** (`CLAUDE_MISS_FLOOR` to change it). So a cheap miss
 sits there in plain text and a dear one starts moving:
 
 ```
-… | $7.8 >1h ago (miss=$1.4) ⊂ $10 | …      ← states the loss, stays still
-… | $7.8 >1h ago (miss=$2.1) ⊂ $10 | …      ← ">1h" and "$2.1" blink red
+… | $7.8 >1h (miss=$1.4) ⊂ $10 | …      ← states the loss, stays still
+… | $7.8 >1h (miss=$2.1) ⊂ $10 | …      ← ">1h" and "$2.1" blink red
 ```
 
 The alarm threshold used to be a flat 100K tokens, which is the wrong unit: what
@@ -262,7 +262,7 @@ against `98%` quota that's `r ≈ 1.02` → on par (no arrow).
 
 ---
 
-## 3. Spend — `✻0.5 ⊂ $25` / `$0.1 3m ago ⊂ $25`
+## 3. Spend — `✻0.5 ⊂ $25` / `$0.1 -3m ⊂ $25`
 
 The spend segment shows **cost only** (no token counts). Three parts: the
 **current/last turn**, a **separator that doubles as the turn-state indicator**,
@@ -271,7 +271,7 @@ then the **session total**.
 | Piece | Meaning |
 |-------|---------|
 | `✻0.5` | cost of the **current turn** (one decimal) — the **animated flower stands in for the `$`** while it is still adding up |
-| *(or)* `$0.1 3m ago` | when idle: the finished turn's cost, `$` restored, + a ticking "N ago" clock |
+| *(or)* `$0.1 -3m` | when idle: the finished turn's cost, `$` restored, + a ticking "-N" clock |
 | *(or)* *nothing* | right after Enter, before this turn has billed: **no figure at all**, just the bare flower |
 | `(2.7⏱)` | red — this turn **missed the prompt cache**; $2.70 of the turn's price went on rebuilding the prefix (see §3.1) |
 | `⊂` | subset: the turn's spend is *contained in* the session's (see below) |
@@ -327,7 +327,7 @@ quantity, a piece of the same money.
   when the latest user prompt first appeared; the turn cost is
   `current_total − snapshot`.
 
-### The flower vs `N ago` switch
+### The flower vs `-N` switch
 
 **Three** states, driven by whether the agent is working **and** whether the
 **current turn has actually billed yet** (`turn_cost > 0`):
@@ -389,8 +389,17 @@ quantity, a piece of the same money.
   frame of the bloom visibly twitches. Five frames that hold still beat six that
   don't. A useful reminder that "same-looking glyph" ≠ "same vertical metrics":
   mixing Unicode blocks in an animation is how you get a wobble.
-- **idle** → the finished turn's figure with its `$` back, a ticking `N ago` and
-  **no** flower. The "ago" already says it's the last turn.
+- **idle** → the finished turn's figure with its `$` back, a ticking `-N` and
+  **no** flower. The minus already says it's the last turn.
+
+  **The clock is a minus, not the word `ago`.** `-29m` says in one glyph what
+  ` ago` said in four: a signed offset from now, the convention a diff or a
+  timeline already uses. In a bar where every other cell is a number, a lone
+  English word was the only thing asking to be *read* rather than seen — and it
+  spent three cells in the one segment that also has to fit a price
+  (`$7.8 -51m > 5m (miss=$2.1) ⊂ $10` is tight enough already). `>1h` keeps its
+  own shape: the `>` points the same direction the minus would, and `->1h` would
+  stack two symbols onto one meaning.
 
 The just-finished turn's cost is still snapshotted as "previous turn" **before**
 the baseline rolls forward (`prev_turn_cost` in the state file). It now only
@@ -400,7 +409,7 @@ just-hit-Enter window deliberately shows nothing instead.
 ## 3.1 Prompt-cache miss — the red `(2.7⏱)` on the turn price
 
 ```
-Opus 5XH 200K/1M | 98% left / 4:47 | $5.2(2.7⏱) ⊂ $34 | ai | +24% ⊂ 70% / 1d1h
+Opus 5XH 200K/1M | 98% left / 4:47 | $5.2(2.7⏱) ⊂ $34 | ai | (+24)70% / 1d1h
 ```
 
 A red `(2.7⏱)` glued to the turn price means **this turn did not reuse the cached
@@ -436,7 +445,7 @@ by `miss` alone (the word `cache` restated context the segment already carries �
 the only thing this line can miss *is* the prompt cache). `⏱` now replaces the
 word entirely, and the objection to `!` does not transfer: the stopwatch names
 the **cause**, not the severity. What kills a prompt cache is a clock running
-out; it is the same clock the `N ago` reading two cells over is already counting;
+out; it is the same clock the `-N` reading two cells over is already counting;
 the glyph *is* that clock.
 
 It **trails** the figure, where a unit goes: `2.7⏱` reads as "2.7 worth of
@@ -528,30 +537,30 @@ Tail deltas are ignored; a genuine mid-session switch still lands immediately,
 because once the session drops to 5-minute caching the next big write goes into
 the 5 m bucket and wins on its own.
 
-That number then drives the **`N ago` clock** (the price is always stated; the
+That number then drives the **`-N` clock** (the price is always stated; the
 blink only above **$2** — see §1.1):
 
 | Age since the last turn | Rendering | Meaning |
 |-------------------------|-----------|---------|
-| `< 0.8 × TTL` | plain, `12m ago` | prefix is warm — no price, nothing at stake |
-| `0.8 × TTL … TTL` | orange, `48m ago <= 1h (miss=$2.1)` | last chance — send now and you still pay 0.1× |
-| `≥ TTL` | red, `51m ago > 5m (miss=$2.1)` | prefix is gone; your next message rebuilds it at the write price |
-| `≥ 1 h` | red, `>1h ago (miss=$2.1)` | as above, and the exact age no longer matters |
+| `< 0.8 × TTL` | plain, `-12m` | prefix is warm — no price, nothing at stake |
+| `0.8 × TTL … TTL` | orange, `-48m <= 1h (miss=$2.1)` | last chance — send now and you still pay 0.1× |
+| `≥ TTL` | red, `-51m > 5m (miss=$2.1)` | prefix is gone; your next message rebuilds it at the write price |
+| `≥ 1 h` | red, `>1h (miss=$2.1)` | as above, and the exact age no longer matters |
 
 The colour **blinks** on/off in the bottom three rows only when the price clears
 $2; below that the same text is rendered once, in the terminal's normal colour.
 
-**The clock states its own verdict.** `51m ago` is a number with no conclusion
+**The clock states its own verdict.** `-51m` is a number with no conclusion
 attached — the reader has to remember what the TTL is and do the comparison. So
-the blinking form prints the comparison itself, `51m ago > 5m` or
-`48m ago <= 1h`, which is also the one wording that survives the TTL being 1 h
+the blinking form prints the comparison itself, `-51m > 5m` or
+`-48m <= 1h`, which is also the one wording that survives the TTL being 1 h
 instead of 5 m without quietly changing meaning.
 
 **Past an hour it stops counting.** `2h`, `16h` and `3d` all mean one single
 thing — you are rebuilding from scratch — so they collapse into `>1h`, rather
 than three buckets inviting you to compare numbers that no longer differ in
 consequence. `>1h` is also its own verdict, which is why the `> TTL` comparison
-is dropped in that row: `>1h ago > 1h` is noise. Below the hour the minutes stay
+is dropped in that row: `>1h > 1h` is noise. Below the hour the minutes stay
 unrounded, because that is the range where a 1 h cache is still the thing being
 decided about and the gap between `41m` and `58m` is the gap between "later" and
 "now".
@@ -561,7 +570,7 @@ decided about and the gap between `41m` and `58m` is the gap between "later" and
 instead of read at the cache-**read** price — the spread between the two
 multipliers, over `used_tokens`, at the model's own input rate (Opus $5/MTok,
 Sonnet $3, Haiku $1, Fable $10). Naming the price *while the prefix is still
-alive* is the entire point of the orange phase: `4m ago <= 1h` is a deadline with
+alive* is the entire point of the orange phase: `-4m <= 1h` is a deadline with
 no stake attached, and a deadline you cannot price is one you cannot decide
 about.
 
@@ -610,7 +619,7 @@ post-mortem** ("you just did").
 
 ---
 
-## 4. Weekly quota — `+24% ⊂ 70% / 1d1h`
+## 4. Weekly quota — `(+24)70% / 1d1h`
 
 The **last** segment, tracking the rolling **7-day** (604800s) rate-limit window.
 Segment 2 answers *"can I keep going right now"*; this one answers the slower
@@ -621,29 +630,35 @@ once in a while, not every turn.
 Three readings of the one window, in the order you ask them: the **pace**, then
 **what's left**, then **how long the window has to run**. The last join is a `/`,
 the same separator the 5h pair uses (`98% left / 4:47`) and meaning the same
-thing here — one window, several readings. The **first** join is a `⊂`, because
-those two readings are not siblings: see below.
+thing here — one window, several readings. The first two are not joined at all:
+the pace is **bracketed and glued** to the figure it qualifies, see below.
 
 | Piece | Meaning | Source |
 |-------|---------|--------|
-| `+24%` | pace: **percentage points** off a straight line, `elapsed% − used%` | derived |
-| `⊂` | subset: the pace is a *slice of* what's left (see below) | — |
+| `(+24)` | pace: **percentage points** off a straight line, `elapsed% − used%`; bracketed and glued to the figure it qualifies (see below) | derived |
 | `70%` | quota remaining this week = `100 − used%` | `.rate_limits.seven_day.used_percentage` |
 | `1d1h` | **working** time until the weekly window resets (weekends excluded) | `.rate_limits.seven_day.resets_at` |
 
 Pace **leads** the absolute figure, mirroring the 5h arrow: the signed number is
 the "am I OK?" glance, the `% left` is the detail you read second.
 
-The separator between them is **`⊂`**, the same subset sign [the spend
-cell](#3-spend--05--25) uses for `$0.6 ⊂ $3`, and for the same reason: the two
-figures are not siblings, one is *contained in* the other. `+6% ⊂ 27%` says six
-of the twenty-seven points still in the window are slack you are ahead by.
-Without a separator, `+6% 27%` is two bare percentages jammed together with
-nothing signalling they're different quantities — the eye tries to relate them
-and stalls. A `/` (the earlier rule, and an `=` before that) at least separated
-them, but put them on equal footing and left the reader to guess the relation.
-A worked example of the general rule: when two adjacent numbers share a unit,
-spend a character telling the reader how their *meanings* relate.
+There is **no separator** between them: the pace is **bracketed and glued** on,
+`(+6)27%`, the same move [the spend cell](#3-spend--05--25) makes with
+`$5.2(2.7⏱)` — a qualifier riding on the figure it qualifies rather than a cell
+of its own. `+6% 27%`, two bare percentages jammed together, was never an option:
+nothing signals they are different quantities, so the eye tries to relate them
+and stalls. A `/` (an early rule, with an `=` before that) at least separated
+them, but put them on equal footing. A spaced **`⊂`** (the rule this replaced)
+got the *relation* right — the pace is a slice of what's left, six of the
+twenty-seven points still in the window are slack you are ahead by — yet it
+still said so across two spaces, and a separator, whatever it means, makes two
+readings out of what the eye should take as one. Brackets bind tighter than any
+spaced sign can, and the pair gets narrower in the one cell already carrying
+three readings.
+
+The pace also **drops its own `%`**: it is glued to a figure that already carries
+the unit, and both are percentage points of the same window, so one `%` serves
+the pair.
 
 `% left` uses the same thresholds as the 5h segment: **orange < 15%**, **red < 5%**.
 
@@ -883,7 +898,7 @@ total, and doing it cheaply enough to re-render every second. Highlights:
   "previous turn" **before** rolling the baseline forward — so the gap before the
   new turn's usage lands shows the old number instead of **flashing $0.00**.
 - The displayed-cost switch keys off `turn_cost > 0`, not "am I working", so
-  pressing Enter keeps showing `$X.X <age> ago` (never a bare flower with no
+  pressing Enter keeps showing `$X.X -<age>` (never a bare flower with no
   number) until this turn's first cost actually lands.
 
 ### Token counting that doesn't over-count (still parsed, no longer shown)
@@ -900,7 +915,7 @@ total, and doing it cheaply enough to re-render every second. Highlights:
   costly to run every second. Its one-line output is **cached against the
   transcript's mtime** (`/tmp/claude-statusline-cache-<id>.txt`); while the file
   is untouched the cache is reused, and any new message bumps the mtime and forces
-  a re-parse. This is what lets the idle "N ago" clock tick per-second for free.
+  a re-parse. This is what lets the idle "-N" clock tick per-second for free.
 
 ### Layered turn-state resolution (three fallbacks)
 Knowing whether the agent is *thinking* or *waiting on you* — and when the last
@@ -909,7 +924,7 @@ priority order:
 1. **Hook state (authoritative):** a `Stop` / `UserPromptSubmit` hook
   (`~/.claude/hooks/turn-state.sh`) writes `/tmp/claude-turn-<id>.state` that
   marks boundaries reliably for *every* storage format. While `working`, the
-  fallback "N ago" clock is kept ticking so it keeps running through the window
+  fallback "-N" clock is kept ticking so it keeps running through the window
   right after you hit Enter — until this turn's first cost lands.
 2. **Transcript fallback:** `stop_reason != "tool_use"` + no trailing user
   message ⇒ idle; age from the last assistant `timestamp`.
@@ -969,7 +984,7 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   others parse positionally is exactly where a "harmless" change breaks a consumer.
 
 ### Context-aware idle warning
-- The "N ago" clock and the context counter are coloured against **the session's
+- The "-N" clock and the context counter are coloured against **the session's
   real prompt-cache TTL** (read off `cache_creation.ephemeral_{5m,1h}_input_tokens`,
   see §3.1) via one shared `cache_phase()` predicate: orange in the last 20 %
   before it, red once past it. That predicate is deliberately **money-blind** — it
@@ -1389,20 +1404,26 @@ abbr_tok() {
   fi
 }
 
-# Format seconds-since-the-turn-ended as " <rel> ago" (leading space included):
-#   <60s -> "Ns" (ticks 1s,2s,3s...), <60m -> "Nm", else ">1h".
+# Format seconds-since-the-turn-ended as " <rel>" (leading space included):
+#   <60s -> "-Ns" (ticks -1s,-2s,-3s...), <60m -> "-Nm", else ">1h".
+# The leading MINUS is what the word "ago" used to do, in one glyph instead of
+# four: a signed offset from now, the same convention a diff or a timeline uses.
+# It reads at a glance in a bar where every other cell is already a number, and
+# it buys back three cells in the one segment that also has to fit a price.
+# ">1h" keeps its own shape — the ">" already points the same direction the minus
+# would, and "->1h" would stack two symbols onto one meaning.
 # Colored against the ACTUAL prompt-cache TTL of this session ($ttl_secs, read
 # off the API usage — 300s or 3600s, see below), not a hardcoded 5 minutes:
 #   orange in the last 20% before the TTL (spend it or lose it),
 #   red once the TTL has passed (the prefix is gone; your next message pays the
 #   full 1.25x cache-WRITE price again instead of the 0.1x read price).
-# Concretely, on a 5-minute TTL: "4m ago" is >= 240s and still under 300s, so it
+# Concretely, on a 5-minute TTL: "-4m" is >= 240s and still under 300s, so it
 # goes ORANGE — the prefix is alive and you have about a minute to use it.
-# "51m ago" is far past 300s, so it goes RED — that cache is already gone.
-# On a 1-hour TTL the same two readings say the opposite thing: "4m ago" is not
-# coloured at all, and "51m ago" is the orange one (48m is 80% of 60m) with red
+# "-51m" is far past 300s, so it goes RED — that cache is already gone.
+# On a 1-hour TTL the same two readings say the opposite thing: "-4m" is not
+# coloured at all, and "-51m" is the orange one (48m is 80% of 60m) with red
 # only from 60m on. Which is exactly why the TTL is detected rather than assumed
-# — the same "51m ago" is a shrug or an emergency depending on it.
+# — the same "-51m" is a shrug or an emergency depending on it.
 # The colour BLINKS only above $MISS_FLOOR; below it the same verdict, price and
 # all, is rendered once in the normal colour (see the report-vs-alarm note below).
 # Uses globals $used_tokens/$ttl_secs/colors. Echoes nothing for invalid input.
@@ -1411,29 +1432,29 @@ fmt_age() {
   case "$_secs" in ''|*[!0-9]*) return 0 ;; esac
   _mins=$((_secs / 60))
   if [ "$_mins" -lt 1 ]; then
-    _rel="${_secs}s"
+    _rel="-${_secs}s"
   elif [ "$_mins" -lt 60 ]; then
     # Minutes stay unrounded through the whole first hour — that is the range
     # where the 1h cache is still the thing being decided about, and where the
     # difference between 41m and 58m is the difference between "later" and "now".
-    _rel="${_mins}m"
+    _rel="-${_mins}m"
   else
     # Past an hour every cache is gone and the reading stops being actionable:
     # 2h, 16h and 3d all mean the same single thing — you are rebuilding from
     # scratch — so they collapse into one glyph-cheap ">1h" rather than three
     # buckets that invite you to compare numbers that no longer differ in
     # consequence. It also reads as its own verdict, which is why the "> TTL"
-    # comparison below is dropped in this case: ">1h ago > 1h" is noise.
+    # comparison below is dropped in this case: ">1h > 1h" is noise.
     _rel=">1h"
   fi
   # Say WHY it is blinking, in the terms the reader would otherwise have to
   # supply from memory: the idle time, the TTL it is measured against, and what
-  # crossing it costs. "51m ago" alone is a number with no verdict attached —
-  # "51m ago > 5m (miss=$1.7)" is the verdict, and it is also the one form that
+  # crossing it costs. "-51m" alone is a number with no verdict attached —
+  # "-51m > 5m (miss=$1.7)" is the verdict, and it is also the one form that
   # survives the TTL being 1h instead of 5m without silently changing meaning.
   #
   # Only the two VARIABLES blink — the elapsed time and the price. The words
-  # around them ("ago", "> 5m", "miss=") are fixed scaffolding that says how to
+  # around them ("> 5m", "miss=") are fixed scaffolding that says how to
   # read those two figures, and blinking them too just widened the flashing block
   # until it was a bar of moving text you had to wait out to read. Held steady,
   # they stay legible during the off-beat and the eye lands straight on whichever
@@ -1444,13 +1465,13 @@ fmt_age() {
   # may be asking on purpose ("what did stepping away just cost me?") and a number
   # withheld below an arbitrary line is a bar you cannot use to check. The BLINK is
   # reserved for the ones worth interrupting you over ($MISS_FLOOR). So a cheap
-  # miss prints "51m ago > 5m (miss=$1.4)" in plain text and stays out of the way,
+  # miss prints "-51m > 5m (miss=$1.4)" in plain text and stays out of the way,
   # and only a dear one starts moving.
   _phase=$(cache_phase "$_secs")
   case "$_phase" in
     expired)  _hue=red ;;
     expiring) _hue=orange ;;
-    *)        printf ' %s ago' "$_rel"; return 0 ;;
+    *)        printf ' %s' "$_rel"; return 0 ;;
   esac
   # ">1h" is already its own verdict, so it does not also get compared to the TTL.
   _cmp=""
@@ -1461,12 +1482,12 @@ fmt_age() {
   # rounds to "$0.0", and printing a price of zero says less than printing nothing.
   _price=$(miss_cost)
   if [ "$_price" = '$0.0' ]; then
-    printf ' %s ago%s' "$_rel" "$_cmp"
+    printf ' %s%s' "$_rel" "$_cmp"
   elif miss_big; then
-    printf ' %s ago%s (miss=%s)' \
+    printf ' %s%s (miss=%s)' \
       "$(pulse "$_hue" "$_rel")" "$_cmp" "$(pulse "$_hue" "$_price")"
   else
-    printf ' %s ago%s (miss=%s)' "$_rel" "$_cmp" "$_price"
+    printf ' %s%s (miss=%s)' "$_rel" "$_cmp" "$_price"
   fi
 }
 
@@ -1496,7 +1517,7 @@ fmt_ttl() {
 #
 # Shown from the moment the cache is at risk (orange, still savable) as well as
 # past the TTL, at any size. Naming the price while the prefix is still alive is
-# the whole point of the orange phase: "4m ago <= 1h" is a deadline with no stake
+# the whole point of the orange phase: "-4m <= 1h" is a deadline with no stake
 # attached, and a deadline you cannot price is one you cannot decide about.
 #
 # miss_usd is the raw number for arithmetic, miss_num the same figure formatted
@@ -1534,7 +1555,7 @@ miss_big() {
 }
 
 # Which side of the prompt-cache TTL is this idle gap on? The single source of
-# truth for both things that react to it — the "N ago" clock and the context
+# truth for both things that react to it — the "-N" clock and the context
 # counter — so they can never disagree about what state the cache is in.
 #   expiring = inside the last 20% before the TTL: the prefix is still warm, send
 #              something NOW and you keep paying 0.1x
@@ -1630,7 +1651,7 @@ def isprompt: (.type=="user") and (.isSidechain!=true) and (.isMeta!=true)
   # costly to re-run on every 1s idle refresh. Cache its single-line output and
   # reuse it while the transcript file is untouched (same mtime); any new
   # message bumps the mtime and forces a fresh parse. This keeps
-  # refreshInterval=1 cheap so the idle "N ago" clock can tick per-second.
+  # refreshInterval=1 cheap so the idle "-N" clock can tick per-second.
   # -v2: the cached line grew three fields (cache read / previous prompt size /
   # TTL). The cache is keyed by mtime alone, so a v1 line would be served as
   # valid until the transcript next changes; the version in the name retires it.
@@ -1799,8 +1820,8 @@ if [ -n "$spend_ready" ]; then
     # before — the original bare red "!" — but for a reason this one does not
     # repeat: "!" was an ALARM, a mark that says "react" without saying to what,
     # so there was nothing to remember it by. The stopwatch names the CAUSE. What
-    # kills a prompt cache is a clock running out, it is the same clock the "N
-    # ago" segment two cells over is already counting, and the glyph is that
+    # kills a prompt cache is a clock running out, it is the same clock the "-N"
+    # segment two cells over is already counting, and the glyph is that
     # clock. It TRAILS the figure, where a unit goes: "2.7⏱" reads as "2.7 worth
     # of clock", one quantity with its kind named after it, which is exactly what
     # it is — and it puts the two numbers, the ones you actually compare, nearer
@@ -1812,7 +1833,7 @@ if [ -n "$spend_ready" ]; then
     hstate=$(sed -n '1p' "$hookstate"); hts=$(sed -n '2p' "$hookstate")
     case "$hstate" in
       # Keep age_secs (the fallback "time since last activity") ticking even while
-      # working, so the "<age> ago" clock keeps running through the window right
+      # working, so the "-<age>" clock keeps running through the window right
       # after you hit Enter — until this turn's first cost actually lands.
       working) idle=0 ;;
       idle)    idle=1; case "$hts" in ''|*[!0-9]*) ;; *) age_secs=$((now - hts)); [ "$age_secs" -lt 0 ] && age_secs=0 ;; esac ;;
@@ -1835,7 +1856,7 @@ if [ -n "$spend_ready" ]; then
   #     side, and the figure it qualifies cannot be mistaken for the total.
   #     Nothing shifts width when it starts or stops.
   #   idle -> the finished turn's figure, its "$" back, plus a ticking
-  #     "<age> ago" — the "ago" already says it's the last turn.
+  #     "-<age>" — the minus already says it's the last turn.
   # The separator between the two figures is ALWAYS "⊂", in every state.
   if [ "$idle" != "1" ]; then
     # Claude Code's own "Working…" spinner: the asterisk-flower blooming and
@@ -1938,11 +1959,11 @@ if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
   out="$out | $spend_seg"
 fi
 
-# --- Weekly quota, last cell of the bar: "+6% ⊂ 27% / 1wd1h"
+# --- Weekly quota, last cell of the bar: "(+6)27% / 1wd1h"
 # The 5h segment answers "can I keep going right now"; this one answers the
 # slower question — am I going to run out of week before the week runs out.
 # Three numbers, in the order you actually ask them:
-#   +6%   pace, in percentage POINTS off a straight line: elapsed% − used%.
+#   (+6)  pace, in percentage POINTS off a straight line: elapsed% − used%.
 #         Positive = consumed less than the clock, i.e. points of slack in hand;
 #         negative = burning ahead of the week. Points, not a ratio, because
 #         over a whole week the linear budget is the mental model people
@@ -2023,15 +2044,18 @@ if [ -n "$week" ]; then
         if (dd>0)      printf (hh>0 ? "%dwd%dh" : "%dwd"), dd, hh;
         else if (hh>0) printf "%dh", hh;
         else           printf "%dm", int(d/60) }')
-      # Signed percentage rather than an arrow glyph: the pace sits right next to
+      # Signed number rather than an arrow glyph: the pace sits right next to
       # the "% left" figure, and two numbers in the same unit compare instantly
-      # ("28% left, but 18% behind") where a "%" next to a "↓18" invites reading
-      # the second one as a different kind of quantity.
+      # ("28% left, but 18% behind") where a "↓18" invites reading the second one
+      # as a different kind of quantity. The sign carries the direction, so no
+      # glyph has to. The "%" is NOT repeated on the pace — it is glued to a
+      # figure that already carries the unit, and both are points of the same
+      # window, so one "%" serves the pair.
       case "$delta" in
-        -*) wtxt="-${delta#-}%"
+        -*) wtxt="(-${delta#-})"
             if [ "${delta#-}" -ge 10 ]; then wcol="$RED"; else wcol="$ORANGE"; fi ;;
-        0)  wtxt="0%"; wcol="" ;;
-        *)  wtxt="+${delta}%"; wcol="$GREEN" ;;
+        0)  wtxt="(0)"; wcol="" ;;
+        *)  wtxt="(+${delta})"; wcol="$GREEN" ;;
       esac
       if [ -n "$wcol" ]; then
         wpace="${wcol}${wtxt}${RESET}"
@@ -2042,16 +2066,18 @@ if [ -n "$week" ]; then
   fi
   # Pace LEADS the absolute figure, same reasoning as the 5h arrow: the signed
   # number is the "am I OK?" glance, the "% left" is the detail you read second.
-  # The separator between them is "⊂", the same subset sign the spend cell
-  # uses for "$0.6 ⊂ $3": the pace is not a sibling of the "% left", it is a
-  # SLICE OF IT -- "+6% ⊂ 27%" says six of the twenty-seven points still in
-  # the window are slack you are ahead by. A "/" put the two on equal footing
-  # and invited reading them as unrelated readings; "⊂" spends the same one
-  # character to say which one contains the other. The remaining "/" before the
-  # duration stays -- the time left really IS a separate reading of the window,
-  # which is what "/" means everywhere else in this bar ("96% left / 4:44").
+  # It is PARENTHESISED and GLUED to it -- "(+6)27%" -- rather than separated by
+  # a spaced "⊂". Both forms said the pace belongs to the figure beside it, but
+  # "⊂" said it across two spaces, which is exactly what a separator does: it
+  # made two readings out of what the eye should take as one. Brackets bind
+  # tighter than any spaced sign can, and they are the same move the spend cell
+  # makes with "$5.2(2.7⏱)" -- a qualifier riding on the figure it qualifies,
+  # not a second cell. The pair also gets narrower, in the one cell that already
+  # carries three readings. The "/" before the duration stays -- the time left
+  # really IS a separate reading of the window, which is what "/" means
+  # everywhere else in this bar ("96% left / 4:44").
   if [ -n "$wpace" ]; then
-    week_seg="${wpace} ⊂ ${wleft_str}"
+    week_seg="${wpace}${wleft_str}"
   else
     week_seg="$wleft_str"
   fi
@@ -2143,7 +2169,7 @@ esac
 #   1. the cached prefix has EXPIRED, dearly    -> red blink
 #   2. it is about to expire, dearly            -> orange blink
 #   3. the context is simply enormous (>300K)   -> static red
-# (1) and (2) also blink the "N ago" clock, and the pair is the whole point: the
+# (1) and (2) also blink the "-N" clock, and the pair is the whole point: the
 # clock says how long the cache has left, the token count says how much it is
 # worth. Watching either alone tells you half of "is idling here about to cost
 # me a dollar" — so they light up together, in the same colour, on the same beat.
