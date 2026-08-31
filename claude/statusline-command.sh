@@ -513,6 +513,13 @@ miss_num() {
     'BEGIN{ printf (c >= 10 ? "%.0f" : "%.1f"), c }'
 }
 miss_cost() { printf '$%s' "$(miss_num "$1")"; }
+# One decimal, always TRUNCATED, never rounded — the same rule the session total
+# obeys, applied to the turn figure sitting next to it. Both figures have to be
+# cut the same way or the "⊂" starts lying: $3.26 of session spent entirely in
+# one turn rounds the turn UP to 3.3 while the total truncates DOWN to 3.2, and
+# the bar prints "✻3.3 ⊂ $3.2" — a subset larger than the set containing it.
+# The +1e-9 defends against 3.2*10 = 31.999999999999996 in binary floating point.
+trunc1() { awk -v v="${1:-0}" 'BEGIN{ printf "%.1f", int(v*10 + 1e-9)/10 }'; }
 # Is the loss big enough to MOVE for? The gate used to be a flat 100K tokens,
 # which is the wrong unit: what makes a miss worth interrupting you over is the
 # MONEY, and the same 100K is ~19c of Haiku and ~$1.90 of Opus-on-a-1h-TTL.
@@ -872,7 +879,8 @@ if [ -n "$spend_ready" ]; then
     # The flower stands in for the "$". No cost yet on this turn => print no
     # figure at all and let the bare flower open the segment.
     if [ "$(echo "$turn_cost > 0" | bc -l)" = "1" ]; then
-      turn_money=$(printf '%s%s%s%.1f' "$bloom" "$flower" "$RESET" "$turn_cost")
+      turn_disp=$(trunc1 "$turn_cost")
+      turn_money=$(printf '%s%s%s%s' "$bloom" "$flower" "$RESET" "$turn_disp")
     else
       turn_money=""
     fi
@@ -882,7 +890,8 @@ if [ -n "$spend_ready" ]; then
     # idle after a finished turn -> that turn's cost is in turn_cost; just after
     # Enter (turn_cost==0) -> fall back to the previous turn's cost.
     if [ "$(echo "$turn_cost > 0" | bc -l)" = "1" ]; then disp_cost="$turn_cost"; else disp_cost="$prev_turn_cost"; fi
-    turn_money=$(printf '$%.1f' "$disp_cost")
+    turn_disp=$(trunc1 "$disp_cost")
+    turn_money=$(printf '$%s' "$turn_disp")
     age_str=""
     [ -n "$age_secs" ] && age_str=$(fmt_age "$age_secs")
     turn_suffix="$age_str"
@@ -911,8 +920,19 @@ if [ -n "$spend_ready" ]; then
   # point, so a bare int() would print "$0.2" for thirty cents — the same
   # understatement being fixed here, one decimal place down. Below $10 the widest
   # output is "$9.9", so the segment never grows past the 5 cells int() used.
-  total_money=$(awk -v c="$cost" \
-    'BEGIN{ if (c >= 10) printf "$%d", int(c); else printf "$%.1f", int(c*10 + 1e-9)/10 }')
+  #
+  # Above $10 the whole-dollar truncation can drop the total BELOW the turn
+  # figure printed beside it — a $12.75 session spent in one $12.7 turn renders
+  # "$12.7 ⊂ $12". The containment sign makes that a contradiction on its face,
+  # so when whole dollars would fall short of the turn, the total keeps the
+  # decimal instead. Truncation is preserved either way (the total still never
+  # claims unspent money); only the RESOLUTION drops back to the turn's, which
+  # is exactly the resolution needed for the pair to stay readable as a subset.
+  # This only ever fires when one turn accounts for essentially the whole
+  # session — the first turn, or a resumed one — so the wider cell is rare.
+  total_money=$(awk -v c="$cost" -v t="${turn_disp:-0}" \
+    'BEGIN{ d = int(c); tr = int(c*10 + 1e-9)/10
+            if (c >= 10 && d >= t) printf "$%d", d; else printf "$%.1f", tr }')
   if [ -n "$turn_money" ]; then
     spend_seg="${turn_money}${miss_tag}${turn_suffix} ${sep} ${total_money}"
   else
