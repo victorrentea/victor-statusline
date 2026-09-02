@@ -256,7 +256,7 @@ fi
 # beside the cwd markers.
 mic=""
 _bt=""
-[ -r "$HOME/.walkie-talkie/bound-tty" ] && read -r _bt < "$HOME/.walkie-talkie/bound-tty" 2>/dev/null
+[ -r "$HOME/.walkie-talkie/bound-tty" ] && read -r _bt _bstate < "$HOME/.walkie-talkie/bound-tty" 2>/dev/null
 if [ -n "$_bt" ]; then
   _mytty=""
   _ttyf="$HOME/.claude/cwd/.tty-$PPID"
@@ -268,9 +268,25 @@ if [ -n "$_bt" ]; then
       ttys*) { mkdir -p "$HOME/.claude/cwd" && printf '%s' "$_mytty" > "$_ttyf"; } 2>/dev/null || : ;;
     esac
   fi
-  [ -n "$_mytty" ] && [ "$_bt" = "$_mytty" ] && mic="${ESC}[1;97;48;5;196m 🎙️ ${RESET} "
+  if [ -n "$_mytty" ] && [ "$_bt" = "$_mytty" ]; then
+    # **Yellow means aimed here, red means talking.** Two facts the relay already
+    # keeps apart — the chip says the first with a folder name and the second
+    # with a pulsing dot — collapsed onto the one row that is always on screen.
+    # Bound is the state that lasts hours, so it gets the colour that says
+    # *standing by*; the microphone being open lasts a minute and is the one
+    # thing that must never be in doubt, so it gets the alarm.
+    #
+    # Black on the yellow, white on the red: 226 is far too bright to carry
+    # white text, and a badge that has to be squinted at is the failure this
+    # background was added to fix in the first place.
+    if [ "$_bstate" = "listening" ]; then
+      mic="${ESC}[1;97;48;5;196m 🎙️ ${RESET} "
+    else
+      mic="${ESC}[1;30;48;5;226m 🎙️ ${RESET} "
+    fi
+  fi
 fi
-unset _bt _mytty _ttyf
+unset _bt _bstate _mytty _ttyf
 
 out="${mic}$model"
 

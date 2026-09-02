@@ -87,8 +87,22 @@ the receipt that cannot be missed.
 
 **On a background, not as a bare emoji.** A lone 🎙️ is one more glyph in a row
 already full of them — there and unseeable, the same failure the relay's own
-selection row had once. `\033[1;97;48;5;196m` with a space either side is a badge:
-the eye finds it without reading the row.
+selection row had once. A space either side makes it a badge: the eye finds it
+without reading the row.
+
+**Yellow means aimed here, red means talking.** Two facts the relay already keeps
+apart — the chip says the first with a folder name and the second with a pulsing
+dot — collapsed onto the one row that is always on screen. Bound is the state
+that lasts hours, so it gets the colour that says *standing by*; the microphone
+being open lasts a minute and is the one thing that must never be in doubt, so it
+gets the alarm. Black on the 226, white on the 196: yellow that bright cannot
+carry white text, and a badge that has to be squinted at is the failure the
+background was added to fix.
+
+The marker carries both in one line — `ttys006` or `ttys006 listening`, read with
+a single `read -r _bt _bstate`. A second word rather than a second file: the
+reader is a shell loop doing one builtin read, and two files would be two of them
+plus a state that can be half-written.
 
 **The tty is the only handle both sides hold**, which is §5.1's argument run
 backwards. The relay binds a Terminal tab by tty and writes it to
@@ -1386,7 +1400,7 @@ fi
 # beside the cwd markers.
 mic=""
 _bt=""
-[ -r "$HOME/.walkie-talkie/bound-tty" ] && read -r _bt < "$HOME/.walkie-talkie/bound-tty" 2>/dev/null
+[ -r "$HOME/.walkie-talkie/bound-tty" ] && read -r _bt _bstate < "$HOME/.walkie-talkie/bound-tty" 2>/dev/null
 if [ -n "$_bt" ]; then
   _mytty=""
   _ttyf="$HOME/.claude/cwd/.tty-$PPID"
@@ -1398,9 +1412,25 @@ if [ -n "$_bt" ]; then
       ttys*) { mkdir -p "$HOME/.claude/cwd" && printf '%s' "$_mytty" > "$_ttyf"; } 2>/dev/null || : ;;
     esac
   fi
-  [ -n "$_mytty" ] && [ "$_bt" = "$_mytty" ] && mic="${ESC}[1;97;48;5;196m 🎙️ ${RESET} "
+  if [ -n "$_mytty" ] && [ "$_bt" = "$_mytty" ]; then
+    # **Yellow means aimed here, red means talking.** Two facts the relay already
+    # keeps apart — the chip says the first with a folder name and the second
+    # with a pulsing dot — collapsed onto the one row that is always on screen.
+    # Bound is the state that lasts hours, so it gets the colour that says
+    # *standing by*; the microphone being open lasts a minute and is the one
+    # thing that must never be in doubt, so it gets the alarm.
+    #
+    # Black on the yellow, white on the red: 226 is far too bright to carry
+    # white text, and a badge that has to be squinted at is the failure this
+    # background was added to fix in the first place.
+    if [ "$_bstate" = "listening" ]; then
+      mic="${ESC}[1;97;48;5;196m 🎙️ ${RESET} "
+    else
+      mic="${ESC}[1;30;48;5;226m 🎙️ ${RESET} "
+    fi
+  fi
 fi
-unset _bt _mytty _ttyf
+unset _bt _bstate _mytty _ttyf
 
 out="${mic}$model"
 
