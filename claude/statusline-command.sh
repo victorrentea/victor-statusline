@@ -231,7 +231,48 @@ if [ -n "$ctx" ]; then
   fi
 fi
 
-out="$model"
+# **A microphone in front of the row when Walkie Talkie is bound to THIS
+# session.** The relay's chip already says where the words go, and it says it
+# beside the cursor — the one place Victor is not looking while an agent works,
+# and which macOS hides the moment he touches the keyboard. In a screen of
+# identical terminals that left *which of these is bound?* unanswered anywhere in
+# the window itself. This row is always at the bottom of the right terminal.
+#
+# **On a violent background, not as a bare emoji.** 🎙️ alone on the status line
+# is one more glyph in a row already full of them — it was there and could not be
+# seen, which is the same failure the chip's own selection row had. White on 196
+# is a badge: the eye finds it without reading the row.
+#
+# **The tty is the only handle both sides hold.** The relay binds a Terminal tab
+# by tty and publishes it; this bar already resolves its own tty for the
+# `~/.claude/cwd/<ttysNNN>` publisher below, and for the same reason — $PPID's,
+# not $$'s, since Claude Code spawns this script without a controlling terminal
+# but keeps one itself.
+#
+# **The fast path is a file that is not there.** Nothing bound means one failed
+# builtin `read` and no fork at all, which matters on a bar that re-renders every
+# second in every open session. The `ps` runs only when a binding exists *and*
+# this session's tty has not been resolved yet — once per session, memoised
+# beside the cwd markers.
+mic=""
+_bt=""
+[ -r "$HOME/.walkie-talkie/bound-tty" ] && read -r _bt < "$HOME/.walkie-talkie/bound-tty" 2>/dev/null
+if [ -n "$_bt" ]; then
+  _mytty=""
+  _ttyf="$HOME/.claude/cwd/.tty-$PPID"
+  [ -r "$_ttyf" ] && read -r _mytty < "$_ttyf" 2>/dev/null
+  if [ -z "$_mytty" ]; then
+    _mytty=$(ps -o tty= -p $PPID 2>/dev/null)
+    _mytty=${_mytty// /}
+    case "$_mytty" in
+      ttys*) { mkdir -p "$HOME/.claude/cwd" && printf '%s' "$_mytty" > "$_ttyf"; } 2>/dev/null || : ;;
+    esac
+  fi
+  [ -n "$_mytty" ] && [ "$_bt" = "$_mytty" ] && mic="${ESC}[1;97;48;5;196m 🎙️ ${RESET} "
+fi
+unset _bt _mytty _ttyf
+
+out="${mic}$model"
 
 if [ -n "$five" ]; then
   left=$(printf '%.0f' "$(echo "100 - $five" | bc -l)")
