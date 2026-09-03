@@ -377,13 +377,27 @@ if [ -n "$five" ]; then
     body="${ORANGE}${body}${RESET}"
   fi
   # Parked by quota-gate.sh: this terminal is sleeping until the window resets.
-  # Counts DOWN rather than printing the wake clock time: a frozen terminal that
-  # is frozen on purpose has to prove it is still alive, and a number that moves
-  # every second does that where a fixed "💤14:20" cannot be told apart from a
-  # hung render. `refreshInterval: 1` in settings.json re-runs this script every
-  # second regardless of activity, and the gate's `sleep` runs in a child
-  # process, so the main loop's timer keeps firing while the turn is blocked.
-  # Written "1h45", the SAME duration shape the window countdown next to it now
+  # Shows BOTH a countdown and the absolute wake clock, because they do two
+  # different jobs. The countdown ("💤45m") is a number that moves every second,
+  # and that is what proves the terminal is still alive: a terminal frozen ON
+  # PURPOSE has to be told apart from a hung render, which a static "💤21:15"
+  # alone cannot do. `refreshInterval: 1` in settings.json re-runs this script
+  # every second regardless of activity, and the gate's `sleep` runs in a child
+  # process, so the main loop's timer keeps firing while the turn is blocked —
+  # so a ticking countdown really is a live heartbeat.
+  #
+  # But a countdown alone answers "how long", not "when", and "how long" is the
+  # wrong question if you are about to walk away: reading "💤45m" and converting
+  # it into a time you would actually plan a coffee break around is exactly the
+  # arithmetic this bar exists to save you from. So the wake clock rides along
+  # after it, local time, 24h, off the same $pwake epoch the countdown is
+  # already counting down to — "💤45m / 21:15" — joined with the same " / " this
+  # bar already uses whenever two readings describe one event (e.g. "98% / 4h47
+  # left" above). It is dropped, not guessed at, if `date -r` cannot resolve
+  # $pwake: the countdown alone is still correct, and a broken clock next to a
+  # correct one is worse than no clock at all.
+  #
+  # Written "1h45", the SAME duration shape the window countdown next to it
   # uses. It used to be "1h45m" against that one's "4:47", and the difference in
   # shape was the whole thing keeping two clocks (wake vs window reset) apart.
   # That job now belongs to the two labels that are always present and never
@@ -408,7 +422,12 @@ if [ -n "$five" ]; then
         # Sub-minute: "0m" reads as "stuck", "<1m" reads as "about to wake".
         pfmt="<1m"
       fi
-      body="${body} • ${ORANGE}💤${pfmt}${RESET}"
+      pclock=$(date -r "$pwake" +%H:%M 2>/dev/null)
+      if [ -n "$pclock" ]; then
+        body="${body} • ${ORANGE}💤${pfmt} / ${pclock}${RESET}"
+      else
+        body="${body} • ${ORANGE}💤${pfmt}${RESET}"
+      fi
     fi
   fi
   five_str="${body}"

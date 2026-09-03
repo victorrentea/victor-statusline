@@ -56,6 +56,14 @@ second off (§1.1); everything else holds still:
 Opus 5H 220K/1M | ↑87% / 1h42 left | $1.5 >1h (miss=$2.1) ⊂ $23 | ai | (+15)82% / 3wd8h
 ```
 
+Quota exhausted: `quota-gate.sh` has parked this terminal, and the sleep glyph
+carries both a countdown (proof the render loop is still alive, not hung) and
+the local clock time it wakes at (so you don't do the arithmetic yourself):
+
+```
+Opus 5H 3% / 4h51 left • 💤1h45 / 21:15 | ai | (+15)82% / 3wd8h
+```
+
 Five `|`-separated segments: **model/effort/context**, **5h quota + burn-rate**,
 **spend**, **location**, **7-day quota**. There is **no leading emoji** on the
 model segment.
@@ -278,15 +286,58 @@ was already `23m` and stays so — the `h` only appears when there are hours to
 show — and the minutes stay zero-padded behind it (`1h05`) so the field does not
 change width as the hour drains.
 
-The sleep countdown next door (`💤1h45`, printed by `quota-gate.sh`) is written
-the same way, and used to be the one place the old shapes were doing real work:
-`1h45m` against `4:47` was how you told two clocks apart — when this terminal
-wakes, versus when the window resets. That distinction now rests on the two
-labels that are always there and never ambiguous, the `💤` prefixing one and the
-`left` trailing the other, which frees both numbers to be written the single way
-durations are written in this bar. The trailing `m` survives only where there is
-no hour to name the unit (`45m`, `<1m`) — there the letter is the only thing
-saying what the digits measure.
+### Parked on quota — `💤1h45 / 21:15`
+
+When `quota-gate.sh` has put this terminal to sleep because the 5-hour window
+is nearly exhausted, the quota segment grows a third piece: `98% / 4h47 left •
+💤1h45 / 21:15`. The `💤` prefix is unambiguous on its own (nothing else in the
+bar uses it), so it doubles as the "execution is paused" indicator — there is
+no separate word for "paused", because there is no other reason this glyph
+would be here.
+
+The two numbers after it answer two different questions:
+
+| Piece | Answers | Source |
+|-------|---------|--------|
+| `1h45` | *how long* until this terminal wakes | `$pwake` in `~/.claude/quota-park/<session_id>`, counted down |
+| `21:15` | *what time* that will be | the same `$pwake`, formatted as a local 24h clock |
+
+**The countdown is written the same way the window countdown next to it is**
+(`1h45`, not `1:45`), for the reason §2 already gives: a colon reads as a clock,
+and this segment now genuinely has one sitting a few cells away. It used to be
+the *only* number here, back when `1h45m` against the window's `4:47` was how
+you told two clocks (wake time vs. window reset) apart by shape alone — that
+job now belongs to the `💤` prefix and the `left` suffix instead, so both
+countdowns can be written the one way durations are written in this bar. The
+trailing `m` survives only where there is no hour to name the unit (`45m`,
+`<1m`).
+
+**It counts down rather than sitting still, on purpose.** `refreshInterval: 1`
+re-runs this script every second regardless of activity, and the gate's `sleep`
+runs in a child process, so the main loop's timer keeps firing while the turn
+is blocked — a ticking `💤45m` is a live heartbeat, proof this terminal is
+frozen on purpose and not hung. A bare `💤21:15` cannot make that distinction on
+its own: it would look identical whether the render loop is fine or wedged.
+
+**The clock is what the countdown can't be: plannable without arithmetic.**
+`💤45m` read at 2am still requires you to do the addition yourself before you
+know whether that's worth waiting on or worth going to bed over. `21:15` is the
+number you actually check the room against. It's joined to the countdown with
+the same `" / "` the rest of this bar uses whenever two figures are two
+readings of one event (`98% / 4h47 left` is the other example on this same
+line) — not a new separator, just the existing grammar applied to a new pair.
+
+**It degrades to the countdown alone if the clock can't be resolved.** `date -r
+$pwake` is the only thing that can fail here, and it can only fail if `$pwake`
+itself is malformed — in which case the countdown, which needs nothing but
+subtraction, is still trustworthy on its own. A missing clock next to a correct
+countdown is a smaller loss than a wrong clock next to a correct countdown, so
+the fallback keeps the half that's guaranteed right.
+
+`$pwake` is not the bare `resets_at` from the API — `quota-gate.sh` adds a
+buffer and some jitter before writing it (see its own comments), so `21:15` is
+a few minutes *past* the true window reset, deliberately: better a few minutes
+early back at your desk than a wake attempt that immediately 429s again.
 
 **The arrow leads, it doesn't trail.** In a left-to-right line the glance lands
 on the first glyph of a segment, so that slot goes to the part you read *without
@@ -1521,13 +1572,27 @@ if [ -n "$five" ]; then
     body="${ORANGE}${body}${RESET}"
   fi
   # Parked by quota-gate.sh: this terminal is sleeping until the window resets.
-  # Counts DOWN rather than printing the wake clock time: a frozen terminal that
-  # is frozen on purpose has to prove it is still alive, and a number that moves
-  # every second does that where a fixed "💤14:20" cannot be told apart from a
-  # hung render. `refreshInterval: 1` in settings.json re-runs this script every
-  # second regardless of activity, and the gate's `sleep` runs in a child
-  # process, so the main loop's timer keeps firing while the turn is blocked.
-  # Written "1h45", the SAME duration shape the window countdown next to it now
+  # Shows BOTH a countdown and the absolute wake clock, because they do two
+  # different jobs. The countdown ("💤45m") is a number that moves every second,
+  # and that is what proves the terminal is still alive: a terminal frozen ON
+  # PURPOSE has to be told apart from a hung render, which a static "💤21:15"
+  # alone cannot do. `refreshInterval: 1` in settings.json re-runs this script
+  # every second regardless of activity, and the gate's `sleep` runs in a child
+  # process, so the main loop's timer keeps firing while the turn is blocked —
+  # so a ticking countdown really is a live heartbeat.
+  #
+  # But a countdown alone answers "how long", not "when", and "how long" is the
+  # wrong question if you are about to walk away: reading "💤45m" and converting
+  # it into a time you would actually plan a coffee break around is exactly the
+  # arithmetic this bar exists to save you from. So the wake clock rides along
+  # after it, local time, 24h, off the same $pwake epoch the countdown is
+  # already counting down to — "💤45m / 21:15" — joined with the same " / " this
+  # bar already uses whenever two readings describe one event (e.g. "98% / 4h47
+  # left" above). It is dropped, not guessed at, if `date -r` cannot resolve
+  # $pwake: the countdown alone is still correct, and a broken clock next to a
+  # correct one is worse than no clock at all.
+  #
+  # Written "1h45", the SAME duration shape the window countdown next to it
   # uses. It used to be "1h45m" against that one's "4:47", and the difference in
   # shape was the whole thing keeping two clocks (wake vs window reset) apart.
   # That job now belongs to the two labels that are always present and never
@@ -1552,7 +1617,12 @@ if [ -n "$five" ]; then
         # Sub-minute: "0m" reads as "stuck", "<1m" reads as "about to wake".
         pfmt="<1m"
       fi
-      body="${body} • ${ORANGE}💤${pfmt}${RESET}"
+      pclock=$(date -r "$pwake" +%H:%M 2>/dev/null)
+      if [ -n "$pclock" ]; then
+        body="${body} • ${ORANGE}💤${pfmt} / ${pclock}${RESET}"
+      else
+        body="${body} • ${ORANGE}💤${pfmt}${RESET}"
+      fi
     fi
   fi
   five_str="${body}"
