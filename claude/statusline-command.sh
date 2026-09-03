@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code status line:
-#   "Model/E (ctx% of SIZE) | 5h% left | spend | folder[@branch] | 7d quota"
+#   "Model/e (ctx% of SIZE) | 5h% / reset | spend | folder[@branch] | 7d quota"
 #
 # Ordered by how fast each figure moves: the model line is fixed, the 5h window
 # and the spend change within a turn, the folder changes when you cd, and the
@@ -32,26 +32,32 @@ fi
 # ---------------------------------------------------------------------------
 model=$(echo "$input" | jq -r '.model.display_name // "Claude"' | sed 's/ context)/)/')
 effort=$(echo "$input" | jq -r '.effort.level // empty')
-# Abbreviated to its initial(s). The effort level is a mode you set and then
-# rarely change, so the bar only has to CONFIRM it, not teach it — and one
-# letter buys back three or four columns on the most-read part of the line.
-# "max" is MAX and not M, deliberately: M is medium, and a silent collision
+# Abbreviated to its initial(s), in LOWER case. The effort level is a mode you
+# set and then rarely change, so the bar only has to CONFIRM it, not teach it —
+# and one letter buys back three or four columns on the most-read part of the
+# line. Lower case because the abbreviation is glued straight onto the model
+# name ("Opus 5m"): a capital there reads as part of the name — "Opus 5M" looked
+# like a model called 5M, exactly the misreading a memory-size suffix invites on
+# a line that also prints "200K/1M" — while a lower-case letter is visibly a
+# modifier hanging off the name and never competes with it.
+# "max" is max and not m, deliberately: m is medium, and a silent collision
 # between the cheapest and the most expensive setting is the one abbreviation
 # that must never happen. An unrecognised level prints raw rather than being
 # guessed at — a new level is worth reading in full the first time you meet it.
 case "$effort" in
-  low)    effort=L ;;
-  medium) effort=M ;;
-  high)   effort=H ;;
-  xhigh)  effort=XH ;;
-  max)    effort=MAX ;;
+  low)    effort=l ;;
+  medium) effort=m ;;
+  high)   effort=h ;;
+  xhigh)  effort=xh ;;
+  max)    effort=max ;;
 esac
-# Glued straight onto the name, no separator: "Opus 5H", not "Opus 5/H". The
+# Glued straight onto the name, no separator: "Opus 5h", not "Opus 5/H". The
 # slash was doing the work of a delimiter in a place that has no ambiguity to
-# resolve — the effort is always a trailing capital or two, and the model name
-# never ends in one — so it only added a stroke of visual noise to the very first
-# thing the eye lands on. Model and effort are also one thought ("which brain, at
-# what setting"), and the separator kept splitting them into two.
+# resolve — the effort is always a trailing lower-case letter or two, and the
+# model name never ends in one — so it only added a stroke of visual noise to
+# the very first thing the eye lands on. Model and effort are also one thought
+# ("which brain, at what setting"), and the separator kept splitting them into
+# two.
 if [ -n "$effort" ]; then
   case "$model" in
     *" ("*) model="${model%% (*}${effort} (${model#* (}" ;;
@@ -335,7 +341,7 @@ if [ -n "$five" ]; then
       esac
     fi
   fi
-  # Arrow LEADS the number ("↗98% left"), it does not trail it. The arrow is the
+  # Arrow LEADS the number ("↗98%"), it does not trail it. The arrow is the
   # part you read at a glance without parsing digits, and in a left-to-right line
   # the glance lands on the first glyph of the segment — so the trend gets that
   # slot and the exact figure follows for when you actually care.
@@ -345,7 +351,7 @@ if [ -n "$five" ]; then
   # the part that has to go FIRST: it is computed from quota-left over
   # time-left, so a reading frozen early in the window scores a huge surplus and
   # paints a confident green "↑" — the bar's single most reassuring glyph — at
-  # precisely the moment it knows least. "↑78% / 19m left" was that failure: not
+  # precisely the moment it knows least. "↑78% / 19m" was that failure: not
   # a wrong number politely displayed, but a wrong number ENDORSED. A stale
   # figure is still the best one available and is still shown; what it loses is
   # the right to be believed.
@@ -354,81 +360,88 @@ if [ -n "$five" ]; then
   else
     pct_part="${ind}${left}%"
   fi
-  # "↗98% / 1h23 left": quota-left and time-left are two readings of the SAME
+  # "↗98% / 1h23": quota-left and time-left are two readings of the SAME
   # window, joined with "/" rather than the "•" it replaces; "|" stays reserved
   # for segment boundaries, so the eye still parses where the segment ends.
   #
-  # "left" sits at the END, after both figures, rather than glued to the
-  # percentage. It was true of both readings all along -- 98% of quota left,
-  # 4:47 of window left -- and stating it after the pair lets one word cover
-  # them both instead of labelling the first and leaving the second to be
-  # inferred. It also stops the word from splitting the two numbers you are
-  # comparing: "98% / 1h23" is one glance, "98% left / 1h23" is a glance with a
-  # word wedged into it. With no duration to show, the word stays where it has
-  # to be, on the only figure there is.
-  if [ -n "$dur" ]; then
-    body="${pct_part} / ${dur} left"
-  else
-    body="${pct_part} left"
-  fi
-  if [ "$left" -lt 5 ]; then
-    body="${RED}${body}${RESET}"
-  elif [ "$left" -lt 15 ]; then
-    body="${ORANGE}${body}${RESET}"
-  fi
+  # The word "left" used to trail the pair, on the argument that one label could
+  # cover both figures. It could -- and it was still dead weight. Neither figure
+  # has ever meant anything else here: a percentage that only ever counts down
+  # and a duration that only ever counts down are both obviously remainders, and
+  # in months of reading this bar the word never once resolved an ambiguity. It
+  # was five columns and a word-shaped speed bump between the numbers and the
+  # next segment, on the segment that changes fastest. Dropped in both shapes,
+  # with and without a duration.
   # Parked by quota-gate.sh: this terminal is sleeping until the window resets.
-  # Shows BOTH a countdown and the absolute wake clock, because they do two
-  # different jobs. The countdown ("💤45m") is a number that moves every second,
-  # and that is what proves the terminal is still alive: a terminal frozen ON
-  # PURPOSE has to be told apart from a hung render, which a static "💤21:15"
-  # alone cannot do. `refreshInterval: 1` in settings.json re-runs this script
-  # every second regardless of activity, and the gate's `sleep` runs in a child
-  # process, so the main loop's timer keeps firing while the turn is blocked —
-  # so a ticking countdown really is a live heartbeat.
+  # The sleep is folded INTO the quota reading rather than parked next to it as
+  # its own "• 💤2h22 / 23:21" clause, because the old shape printed the same
+  # fact twice. The gate sleeps until the 5h window resets, so its countdown and
+  # the window countdown are the same number by construction — "↓1% / 2h20 left
+  # • 💤2h22 / 23:21" spent thirteen columns restating "2h20" with a different
+  # rounding, and the two near-identical durations invited exactly the wrong
+  # question ("why do they disagree?"). What sleeping actually adds is one bit —
+  # this terminal is parked, not working — plus the wall-clock time it comes
+  # back. So the bit becomes a 💤 glued onto the percentage, where it modifies
+  # the reading it belongs to, and the wake clock becomes "→ 23:21" hanging off
+  # the duration that was already counting down to it: "↓1%💤 / 2h20 → 23:21".
+  # The arrow is doing what the second "/" cannot — "/" joins two readings of
+  # one thing, "→" says this duration LANDS on that clock.
   #
-  # But a countdown alone answers "how long", not "when", and "how long" is the
-  # wrong question if you are about to walk away: reading "💤45m" and converting
-  # it into a time you would actually plan a coffee break around is exactly the
-  # arithmetic this bar exists to save you from. So the wake clock rides along
-  # after it, local time, 24h, off the same $pwake epoch the countdown is
-  # already counting down to — "💤45m / 21:15" — joined with the same " / " this
-  # bar already uses whenever two readings describe one event (e.g. "98% / 4h47
-  # left" above). It is dropped, not guessed at, if `date -r` cannot resolve
-  # $pwake: the countdown alone is still correct, and a broken clock next to a
-  # correct one is worse than no clock at all.
+  # The countdown is still what proves the terminal is alive rather than hung:
+  # `refreshInterval` re-runs this script regardless of activity and the gate's
+  # `sleep` runs in a child process, so $dur ticks down every render while the
+  # turn is blocked. It is the window countdown doing that job now instead of a
+  # second copy of it.
   #
-  # Written "1h45", the SAME duration shape the window countdown next to it
-  # uses. It used to be "1h45m" against that one's "4:47", and the difference in
-  # shape was the whole thing keeping two clocks (wake vs window reset) apart.
-  # That job now belongs to the two labels that are always present and never
-  # ambiguous — the 💤 prefixing this one, the "left" trailing the other — which
-  # frees the numbers to be written the one way durations are written in this
-  # bar. Trailing "m" is kept only where there is no hour to name the unit
-  # ("45m", "<1m"): there, the letter is the only thing saying what the digits
-  # measure.
+  # If `date -r` cannot resolve $pwake there is no clock to land on, and the
+  # sleep countdown comes back glued to the glyph ("💤2h22") rather than being
+  # guessed at — the only case where the second duration earns its columns is
+  # the one where it is the only absolute information available.
+  sleep_mark=""
+  sleep_tail=""
   park="$HOME/.claude/quota-park/$session_id"
   if [ -n "$session_id" ] && [ -f "$park" ]; then
     pwake=$(cat "$park" 2>/dev/null)
     pnow=$(date +%s)
     if [ -n "$pwake" ] && [ "$pwake" -gt "$pnow" ] 2>/dev/null; then
-      pleft=$((pwake - pnow))
-      ph=$((pleft / 3600))
-      pm=$(((pleft % 3600) / 60))
-      if [ "$ph" -gt 0 ]; then
-        pfmt=$(printf '%dh%02d' "$ph" "$pm")
-      elif [ "$pm" -gt 0 ]; then
-        pfmt="${pm}m"
-      else
-        # Sub-minute: "0m" reads as "stuck", "<1m" reads as "about to wake".
-        pfmt="<1m"
-      fi
       pclock=$(date -r "$pwake" +%H:%M 2>/dev/null)
       if [ -n "$pclock" ]; then
-        body="${body} • ${ORANGE}💤${pfmt} / ${pclock}${RESET}"
+        sleep_mark="${ORANGE}💤${RESET}"
+        sleep_tail=" ${ORANGE}→ ${pclock}${RESET}"
       else
-        body="${body} • ${ORANGE}💤${pfmt}${RESET}"
+        pleft=$((pwake - pnow))
+        ph=$((pleft / 3600))
+        pm=$(((pleft % 3600) / 60))
+        if [ "$ph" -gt 0 ]; then
+          pfmt=$(printf '%dh%02d' "$ph" "$pm")
+        elif [ "$pm" -gt 0 ]; then
+          pfmt="${pm}m"
+        else
+          # Sub-minute: "0m" reads as "stuck", "<1m" reads as "about to wake".
+          pfmt="<1m"
+        fi
+        sleep_mark="${ORANGE}💤${pfmt}${RESET}"
       fi
     fi
+  fi
+  # The low-quota colour is painted onto the two figures themselves rather than
+  # around the whole segment, because the segment is no longer one run of text:
+  # the 💤 and the wake clock carry their own colour, and wrapping the lot would
+  # end at their RESET and leave the tail of the line uncoloured.
+  qcol=""
+  if [ "$left" -lt 5 ]; then
+    qcol="$RED"
+  elif [ "$left" -lt 15 ]; then
+    qcol="$ORANGE"
+  fi
+  if [ -n "$qcol" ]; then
+    pct_part="${qcol}${pct_part}${RESET}"
+    [ -n "$dur" ] && dur="${qcol}${dur}${RESET}"
+  fi
+  if [ -n "$dur" ]; then
+    body="${pct_part}${sleep_mark} / ${dur}${sleep_tail}"
+  else
+    body="${pct_part}${sleep_mark}${sleep_tail}"
   fi
   five_str="${body}"
   out="$out | $five_str"
@@ -1143,7 +1156,7 @@ if [ -n "$week" ]; then
   # not a second cell. The pair also gets narrower, in the one cell that already
   # carries three readings. The "/" before the duration stays -- the time left
   # really IS a separate reading of the window, which is what "/" means
-  # everywhere else in this bar ("96% / 4h44 left").
+  # everywhere else in this bar ("96% / 4h44").
   if [ -n "$wpace" ]; then
     week_seg="${wpace}${wleft_str}"
   else

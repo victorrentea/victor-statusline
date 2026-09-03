@@ -85,9 +85,10 @@ JSON
 )
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
 assert_contains "parked: pause glyph present"        "$out" "💤"
-assert_contains "parked: countdown to wake"          "$out" "45m"
 assert_contains "parked: absolute local wake clock"  "$out" "$back"
-assert_contains "parked: countdown and clock joined" "$out" "45m / $back"
+assert_contains "parked: glyph glued to the percentage" "$out" "%💤"
+assert_contains "parked: wake clock hangs off the window countdown" "$out" "→ $back"
+assert_not_contains "parked: no second sleep countdown"  "$out" "45m"
 
 # --- Case 3: a park marker whose wake time has ALREADY passed (stale/woken) --
 # quota-gate.sh's own trap removes this file on exit, but the render must not
