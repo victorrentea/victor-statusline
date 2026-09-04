@@ -56,12 +56,20 @@ second off (§1.1); everything else holds still:
 Opus 5h 220K/1M | ↑87% / 1h42 | $1.5 >1h (miss=$2.1) ⊂ $23 | ai | (+15)82% / 3wd8h
 ```
 
-Quota exhausted: `quota-gate.sh` has parked this terminal. The sleep glyph rides
-on the quota figure it belongs to, and the wake clock hangs off the window
-countdown that is already running down to it:
+Five-hour quota exhausted: `quota-gate.sh` has parked this terminal. The sleep
+glyph rides on the quota figure it belongs to, and the wake clock hangs off the
+window countdown that is already running down to it:
 
 ```
 Opus 5h 3%💤 / 4h51 → 21:15 | ai | (+15)82% / 3wd8h
+```
+
+The same gate also parks at **1% or less weekly quota**, but marks the weekly
+cell instead; its wake clock includes the weekday because that pause can span
+several days:
+
+```
+Opus 5h 60% / 3h22 | ai | (-6)0%💤 → Mon 00:00 / 7h
 ```
 
 Five `|`-separated segments: **model/effort/context**, **5h quota + burn-rate**,
@@ -294,7 +302,7 @@ was already `23m` and stays so — the `h` only appears when there are hours to
 show — and the minutes stay zero-padded behind it (`1h05`) so the field does not
 change width as the hour drains.
 
-### Parked on quota — `3%💤 / 4h51 → 21:15`
+### Parked on 5-hour quota — `3%💤 / 4h51 → 21:15`
 
 When `quota-gate.sh` has put this terminal to sleep because the 5-hour window is
 nearly exhausted, the quota segment does **not** grow a third piece. Two glyphs
@@ -302,8 +310,8 @@ are folded into the two figures it already shows:
 
 | Piece | Answers | Source |
 |-------|---------|--------|
-| `💤` glued to the `%` | *is this terminal parked?* | the existence of `~/.claude/quota-park/<session_id>` |
-| `→ 21:15` after the countdown | *what time does it wake?* | `$pwake` from that file, as a local 24h clock |
+| `💤` glued to the `%` | *is this terminal parked on this window?* | `five_hour` in `~/.claude/quota-park/<session_id>` |
+| `→ 21:15` after the countdown | *what time does it wake?* | the wake epoch from that file, as a local 24h clock |
 
 The `💤` is unambiguous on its own (nothing else in the bar uses it), so it
 doubles as the "execution is paused" indicator — there is no separate word for
@@ -351,6 +359,10 @@ loss than a wrong clock beside it.
 buffer and some jitter before writing it (see its own comments), so `21:15` is
 a few minutes *past* the true window reset, deliberately: better a few minutes
 early back at your desk than a wake attempt that immediately 429s again.
+
+The marker is one line, `<wake-epoch> <window>`. A legacy marker containing only
+the epoch means `five_hour`, so upgrading the renderer while an old gate is
+already sleeping does not move its glyph to the weekly cell.
 
 **The arrow leads, it doesn't trail.** In a left-to-right line the glance lands
 on the first glyph of a segment, so that slot goes to the part you read *without
@@ -890,6 +902,35 @@ through the same machine-wide merge (see *Cross-terminal quota state* below):
 whichever of your terminals talked to the API most recently is the one whose
 number you see.
 
+### Parked on weekly quota — `0%💤 → Mon 00:00 / 7h`
+
+The request gate pauses when weekly quota remaining reaches **1% or less**
+(`used_percentage >= 99`). This is a separate threshold from the unchanged
+5-hour rule: `CLAUDE_WEEKLY_QUOTA_MIN_PCT` defaults to `1`, while
+`CLAUDE_QUOTA_MIN_PCT` still defaults to `5` and keeps its existing strict
+comparison.
+
+The weekly sleep state belongs here, not beside an otherwise healthy 5-hour
+number. `💤` is therefore glued to the weekly percentage, followed immediately
+by the reset weekday and local clock (`→ Mon 00:00`). A weekday is unnecessary
+inside a five-hour window but essential when a Friday pause wakes on Monday.
+The normal weekly duration remains working time, so it stays after the reset
+clock rather than pretending that weekend hours are working hours.
+
+Unlike the 5-hour decision, an already-low weekly reading remains actionable
+even when its `measured_at` is old. Inside a window usage can only increase, so
+a cached 1% remaining is conservative until its advertised reset; the
+`resets_at > now` guard clears it without needing an API response. That matters
+at actual exhaustion: every attempted request returns 429, so there may be no
+successful response available to re-confirm the reading.
+
+If both windows are exhausted, the gate sleeps until the **later** reset. Waking
+when only the earlier window clears would immediately hit the other limit. The
+default internal ceiling is `604920` seconds (seven days plus the normal buffer
+and jitter), long enough for the weekly window rather than the old six-hour
+ceiling. All three Claude hook timeouts are `605040`, leaving the script two
+minutes to start and log around its maximum sleep.
+
 ---
 
 ## 5. Location — `ai@fix-cache`
@@ -1134,9 +1175,9 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
 - The merged value is shown **unmarked while it is fresh** — which terminal
   measured it stays bookkeeping, not worth a glyph. How *old* it is, is not: see
   the grey `?` in §2.
-- `quota-state.sh read` emits `used resets_at measured_at` for the 5h window (the
-  sibling `quota-gate.sh` consumes all three); the weekly triple is a separate
-  `read7`. It is parsed with `cut -d' ' -f<n>`, **not** `${x%% *}`/`${x##* }` —
+- `quota-state.sh read` emits `used resets_at measured_at` for the 5h window;
+  `read7` emits the weekly triple. The sibling `quota-gate.sh` consumes both.
+  They are parsed with `cut -d' ' -f<n>`, **not** `${x%% *}`/`${x##* }` —
   when the output grew a third field the suffix-strip form silently started
   returning `measured_at` where `resets_at` was meant. Extending an output that
   others parse positionally is exactly where a "harmless" change breaks a consumer.
@@ -1505,6 +1546,27 @@ unset _bt _bstate _mytty _ttyf
 
 out="${mic}$model"
 
+# quota-gate.sh writes the wake epoch and the window that caused this terminal
+# to park. Old one-field markers predate weekly gating and are therefore 5h.
+# Read it once so the sleep indicator can be attached to the matching quota.
+park_wake=""
+park_window=""
+park="$HOME/.claude/quota-park/$session_id"
+if [ -n "$session_id" ] && [ -f "$park" ]; then
+  IFS=' ' read -r park_wake park_window < "$park" || :
+  [ -n "$park_window" ] || park_window=five_hour
+  case "$park_window" in five_hour|seven_day) ;; *) park_wake=""; park_window="" ;; esac
+  case "$park_wake" in
+    ''|*[!0-9]*) park_wake=""; park_window="" ;;
+    *)
+      park_now=$(date +%s)
+      if [ "$park_wake" -le "$park_now" ] 2>/dev/null; then
+        park_wake=""; park_window=""
+      fi
+      ;;
+  esac
+fi
+
 if [ -n "$five" ]; then
   left=$(printf '%.0f' "$(echo "100 - $five" | bc -l)")
   ind=""
@@ -1608,11 +1670,10 @@ if [ -n "$five" ]; then
   # the one where it is the only absolute information available.
   sleep_mark=""
   sleep_tail=""
-  park="$HOME/.claude/quota-park/$session_id"
-  if [ -n "$session_id" ] && [ -f "$park" ]; then
-    pwake=$(cat "$park" 2>/dev/null)
-    pnow=$(date +%s)
-    if [ -n "$pwake" ] && [ "$pwake" -gt "$pnow" ] 2>/dev/null; then
+  if [ "$park_window" = five_hour ]; then
+    pwake=$park_wake
+    pnow=$park_now
+    if [ -n "$pwake" ]; then
       pclock=$(date -r "$pwake" +%H:%M 2>/dev/null)
       if [ -n "$pclock" ]; then
         sleep_mark="${ORANGE}💤${RESET}"
@@ -2270,6 +2331,16 @@ if [ -n "$week" ]; then
     wleft_str="${RED}${wleft_str}${RESET}"
   elif [ "$wleft" -lt 15 ]; then
     wleft_str="${ORANGE}${wleft_str}${RESET}"
+  fi
+
+  # A weekly park belongs on the weekly percentage, never on the healthy 5h
+  # figure. Include the weekday because this sleep may cross a weekend; a bare
+  # clock is sufficient for a five-hour pause but ambiguous several days out.
+  if [ "$park_window" = seven_day ]; then
+    week_wake=$(date -r "$park_wake" '+%a %H:%M' 2>/dev/null)
+    week_sleep="${ORANGE}💤${RESET}"
+    [ -n "$week_wake" ] && week_sleep="${week_sleep} ${ORANGE}→ ${week_wake}${RESET}"
+    wleft_str="${wleft_str}${week_sleep}"
   fi
 
   wpace=""

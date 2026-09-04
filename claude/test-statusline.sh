@@ -105,6 +105,27 @@ JSON
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
 assert_not_contains "woken: no pause glyph once wake time has passed" "$out" "💤"
 
+# --- Case 4: weekly quota exhausted and parked by quota-gate.sh -------------
+# Window-aware markers put the sleep state on the quota that caused it. The
+# weekly clock includes a weekday because this pause can span several days.
+session="statusline-test-weekly-parked"
+week_reset=$((now + 2 * 86400 + 47 * 60))
+wake=$((week_reset + 12))
+mkdir -p "$HOME/.claude/quota-park"
+printf '%s seven_day' "$wake" > "$HOME/.claude/quota-park/$session"
+back=$(date -r "$wake" '+%a %H:%M')
+payload=$(cat <<JSON
+{"session_id":"$session","model":{"display_name":"Claude Opus"},
+ "context_window":{},
+ "rate_limits":{"five_hour":{"used_percentage":40,"resets_at":$reset},
+                "seven_day":{"used_percentage":100,"resets_at":$week_reset}}}
+JSON
+)
+out=$(printf '%s' "$payload" | sh "$SCRIPT")
+assert_contains "weekly parked: glyph glued to weekly percentage" "$out" "0%💤"
+assert_contains "weekly parked: wake clock includes weekday"      "$out" "→ $back"
+assert_not_contains "weekly parked: five-hour percentage stays awake" "$out" "60%💤"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

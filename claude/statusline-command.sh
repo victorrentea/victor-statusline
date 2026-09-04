@@ -296,6 +296,27 @@ unset _bt _bstate _mytty _ttyf
 
 out="${mic}$model"
 
+# quota-gate.sh writes the wake epoch and the window that caused this terminal
+# to park. Old one-field markers predate weekly gating and are therefore 5h.
+# Read it once so the sleep indicator can be attached to the matching quota.
+park_wake=""
+park_window=""
+park="$HOME/.claude/quota-park/$session_id"
+if [ -n "$session_id" ] && [ -f "$park" ]; then
+  IFS=' ' read -r park_wake park_window < "$park" || :
+  [ -n "$park_window" ] || park_window=five_hour
+  case "$park_window" in five_hour|seven_day) ;; *) park_wake=""; park_window="" ;; esac
+  case "$park_wake" in
+    ''|*[!0-9]*) park_wake=""; park_window="" ;;
+    *)
+      park_now=$(date +%s)
+      if [ "$park_wake" -le "$park_now" ] 2>/dev/null; then
+        park_wake=""; park_window=""
+      fi
+      ;;
+  esac
+fi
+
 if [ -n "$five" ]; then
   left=$(printf '%.0f' "$(echo "100 - $five" | bc -l)")
   ind=""
@@ -399,11 +420,10 @@ if [ -n "$five" ]; then
   # the one where it is the only absolute information available.
   sleep_mark=""
   sleep_tail=""
-  park="$HOME/.claude/quota-park/$session_id"
-  if [ -n "$session_id" ] && [ -f "$park" ]; then
-    pwake=$(cat "$park" 2>/dev/null)
-    pnow=$(date +%s)
-    if [ -n "$pwake" ] && [ "$pwake" -gt "$pnow" ] 2>/dev/null; then
+  if [ "$park_window" = five_hour ]; then
+    pwake=$park_wake
+    pnow=$park_now
+    if [ -n "$pwake" ]; then
       pclock=$(date -r "$pwake" +%H:%M 2>/dev/null)
       if [ -n "$pclock" ]; then
         sleep_mark="${ORANGE}💤${RESET}"
@@ -1061,6 +1081,16 @@ if [ -n "$week" ]; then
     wleft_str="${RED}${wleft_str}${RESET}"
   elif [ "$wleft" -lt 15 ]; then
     wleft_str="${ORANGE}${wleft_str}${RESET}"
+  fi
+
+  # A weekly park belongs on the weekly percentage, never on the healthy 5h
+  # figure. Include the weekday because this sleep may cross a weekend; a bare
+  # clock is sufficient for a five-hour pause but ambiguous several days out.
+  if [ "$park_window" = seven_day ]; then
+    week_wake=$(date -r "$park_wake" '+%a %H:%M' 2>/dev/null)
+    week_sleep="${ORANGE}💤${RESET}"
+    [ -n "$week_wake" ] && week_sleep="${week_sleep} ${ORANGE}→ ${week_wake}${RESET}"
+    wleft_str="${wleft_str}${week_sleep}"
   fi
 
   wpace=""
