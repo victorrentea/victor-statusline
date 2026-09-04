@@ -3,20 +3,28 @@
 A rich one-line status bar for **GitHub Copilot CLI**. Example:
 
 ```
-🤖 opus-4.8 · high · 55K/1M | 6759 AIC (96%)↗ left | resets in 7d 4h
+🤖 opus-5/high 55K/264K (21%) | 21%↗ ($1.1≈225/1048 AIC) left today | +15% = 98% ($98≈19694 AIC) left / 19wd8h
 ```
 
 Three ` | `-separated segments:
 
-1. **model · effort · context** — model name (the `claude-` prefix stripped),
-  reasoning effort, and **used/limit** context tokens. The used-token count
-  turns **yellow ≥65%** and **red ≥95%** of the window. The `(%)` is shown only
-  when the window isn't the full 1M.
-2. **AI Credits** — credits remaining + `(% left)`, followed by a colored
-   **consumption-trend arrow** comparing how much credit is left against how much
-   **working time** (Mon–Fri) is left in the billing month.
-3. **reset** — **working** days + hours until the monthly quota resets (weekends
-  excluded).
+1. **model/effort context** — model name (the `claude-` prefix stripped), the
+  reasoning effort abbreviated after a `/`, and **used/limit** context tokens.
+  The used-token count turns **yellow ≥65%** and **red ≥95%** of the window. The
+  `(%)` is shown only when the window isn't the full 1M.
+2. **today** — share of *today's* budget already burned, a pace arrow, and the
+   absolutes in parentheses: `($ ≈ burned/budget AIC)`. Today's budget is
+   "credits left at the start of today ÷ working days left until the reset",
+   recomputed daily, so an overshoot never carries a debt — tomorrow simply gets
+   a smaller slice.
+3. **AI Credits** — a signed **reserve** in percentage points (working time
+   elapsed − credits burned), the `% left`, the absolutes `($ ≈ N AIC)`, then the
+   **working** days + hours until the monthly quota resets (weekends excluded).
+
+Every credit figure carries its **list-price dollar equivalent** at 200 AIC = \$1
+(`$98≈19694 AIC`). Credits are an abstract unit invented for billing; the dollar
+is the one both a daily burn rate and a monthly balance can be judged in without
+mental arithmetic. The `≈` marks it as a fixed conversion, not an invoice.
 
 ---
 
@@ -60,27 +68,32 @@ The relevant snapshot is `quota_snapshots.premium_interactions`
 ```bash
 #!/usr/bin/env bash
 # Copilot CLI status line. Example output:
-#   🤖 sonnet-5/med 55K/264K (21%) | 74%↗ (257/345 AIC) left today | +3% = 95% (6646 AIC) left / 20wd7h
+#   🤖 sonnet-5/med 55K/264K (21%) | 74%↗ ($1.3≈257/345 AIC) left today | +3% = 95% ($33≈6646 AIC) left / 20wd7h
 #
 #   • model: display_name with the "claude-" prefix stripped, the reasoning
 #     effort abbreviated after a "/" (medium→med, xhigh, max…) and the
 #     " · N context" tail replaced by "<used>/<limit>" context tokens (used
 #     count coloured yellow ≥65% / red ≥95%; % hidden when the window is 1M).
-#   • today: share of today's budget already burned + (burned/budget AIC), where
-#     the budget is simply "credits left at the start of today ÷ working days
-#     left until the reset". Because it is recomputed from the CURRENT balance
-#     every day, overshooting or undershooting today never carries a debt —
-#     tomorrow just gets a smaller or larger slice, and the plan still lands on
-#     0 exactly at the reset. The arrow compares the share of the budget spent
-#     against the share of the WORKING DAY (09:00–18:00 local) elapsed, so it
-#     says "am I burning faster than the clock" (↑↗ green ahead / none on-track
-#     / ↘ yellow / ↓ red too fast).
+#   • today: share of today's budget already burned + ($ ≈ burned/budget AIC),
+#     where the budget is simply "credits left at the start of today ÷ working
+#     days left until the reset". Because it is recomputed from the CURRENT
+#     balance every day, overshooting or undershooting today never carries a
+#     debt — tomorrow just gets a smaller or larger slice, and the plan still
+#     lands on 0 exactly at the reset. The arrow compares the share of the
+#     budget spent against the share of the WORKING DAY (09:00–18:00 local)
+#     elapsed, so it says "am I burning faster than the clock" (↑↗ green ahead /
+#     none on-track / ↘ yellow / ↓ red too fast).
 #   • AI Credits: a signed RESERVE in percentage points ("how much of the month's
 #     entitlement I still have beyond what I should have left by now", i.e.
 #     working-time elapsed − credits burned), then the remaining % and credits,
 #     then the WORKING days + hours until the monthly quota resets. Signed number
 #     rather than an arrow so it reads in the same unit as the "% left" beside it
 #     — mirrors the weekly segment of victor-claude-statusline.md.
+#   • money: both credit figures are prefixed with their list-price equivalent at
+#     AIC_PER_USD credits per dollar ("$99≈19819 AIC"). Credits are an abstract
+#     unit — the dollar is the one both a burn rate and a balance can be judged
+#     in without doing arithmetic in your head. "≈" not "=" because the rate is
+#     a fixed conversion, not an invoice.
 #
 # Copilot CLI pipes the session status as JSON on stdin; we print one line to
 # stdout. The monthly AI-Credit balance and reset date are NOT in that payload,
@@ -132,6 +145,17 @@ def human(n):
     if n >= 1_000_000: return f"{n/1_000_000:.0f}M" if n % 1_000_000 == 0 else f"{n/1_000_000:.1f}M"
     if n >= 1_000:     return f"{n/1_000:.0f}K"
     return f"{n:.0f}"
+
+# GitHub bills AI Credits at this many per dollar of list price; every credit
+# figure on the line is shown in dollars too, because "$99" lands instantly
+# where "19819 AIC" needs a conversion done in your head first.
+AIC_PER_USD = 200.0
+
+def usd(credits):
+    """Credits as list-price dollars: one decimal under $10, whole above."""
+    try: v = float(credits) / AIC_PER_USD
+    except (TypeError, ValueError, ZeroDivisionError): return None
+    return f"${v:.1f}" if v < 10 else f"${v:.0f}"
 
 # ANSI colours (used-token count, pace arrow, reserve) — mirrors victor-claude-statusline.md
 CLR_RESET = "\033[0m"
@@ -252,7 +276,7 @@ if isinstance(snap, dict) and not snap.get("unlimited"):
             today_used = max(0.0, float(snap["credits_used"]) - float(base["month_used_at_start"]))
 
 if today_used is not None:
-    seg = f"{today_used:.0f} AIC today"
+    seg = f"{usd(today_used)}≈{today_used:.0f} AIC today"
     rem = snap.get("remaining")
     wdl = working_days_left(lnow, reset_dt.astimezone().date()) if reset_dt else 0
     # On a weekend there is no daily budget to measure against — just the raw burn.
@@ -270,8 +294,8 @@ if today_used is not None:
             # Ahead of the clock => spent a smaller share of the budget than of the day.
             arrow = pace_arrow(99.0 if frac <= 0 else elapsed / frac)
             # Percentage first, absolutes in parentheses: the share is the glance,
-            # the raw credits are the detail you read second.
-            seg = f"{pct}{arrow} ({today_used:.0f}/{budget:.0f} AIC) left today"
+            # the raw credits (and what they cost) are the detail you read second.
+            seg = f"{pct}{arrow} ({usd(today_used)}≈{today_used:.0f}/{budget:.0f} AIC) left today"
     parts.append(seg)
 
 # --- working days + hours until the reset (weekends excluded) -------------
@@ -291,7 +315,7 @@ if isinstance(snap, dict):
         rem = snap.get("remaining")
         pr  = snap.get("percent_remaining")
         seg = f"{pr:.0f}% " if pr is not None else ""
-        seg += f"({int(rem)} AIC) left" if rem is not None else "AIC left"
+        seg += f"({usd(rem)}≈{int(rem)} AIC) left" if rem is not None else "AIC left"
         # RESERVE, in percentage points: working time already elapsed in the
         # billing period minus credits already burned. "+3%" = I am three points
         # of the monthly entitlement richer than the calendar says I should be.
@@ -464,6 +488,14 @@ month; weekends contribute zero time). Bands are reciprocal-symmetric:
 ### Used-token color thresholds
 
 Based on `used/limit`: **≥95% → red**, **≥65% → yellow**, else default.
+
+### Credits in dollars
+
+`AIC_PER_USD = 200.0` near the top of the Python block converts every credit
+figure to list-price dollars, printed as `$X≈N AIC`. Under \$10 it keeps one
+decimal (`$1.1`) because a day's burn is a small number where the tenth carries
+the information; at or above \$10 it rounds to whole dollars, since nobody reads
+a monthly balance to the cent. Change the constant if your plan's rate differs.
 
 ### Working-days countdown
 
