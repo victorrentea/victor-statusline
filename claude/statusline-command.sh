@@ -124,6 +124,29 @@ if [ -n "$merged" ]; then
     week_reset=$m_week_reset
   fi
 fi
+
+# A successful authenticated weekly probe is stronger evidence than any
+# session's frozen rate_limits payload. Keep its result authoritative for the
+# same hour the request gate uses before probing again; this also prevents a
+# restarted status line from immediately repainting a returned allowance as the
+# old cached 101%-used value.
+probe_record=$(sed -n '1p' "$HOME/.claude/quota-weekly-probe" 2>/dev/null)
+probe_at="" probe_week="" probe_reset=""
+IFS=' ' read -r probe_at probe_week probe_reset <<EOF
+$probe_record
+EOF
+probe_secs="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-3600}"
+case "$probe_secs" in ''|*[!0-9]*|0) probe_secs=3600 ;; esac
+case "$probe_at:$probe_week:$probe_reset" in
+  *[!0-9.:]*|*::*|:*|*:) ;;
+  *)
+    probe_age=$(( $(date +%s) - probe_at ))
+    if [ "$probe_age" -ge 0 ] && [ "$probe_age" -lt "$probe_secs" ]; then
+      week=$probe_week
+      week_reset=$probe_reset
+    fi
+    ;;
+esac
 # Past this, no terminal on the machine has re-confirmed the 5h figure and it is
 # no longer a fact, only the last thing anybody saw. It is still the best number
 # available -- so it is shown, but marked (see $STALE_5H use below).
@@ -1084,8 +1107,8 @@ if [ -n "$week" ]; then
   fi
 
   # A weekly park belongs on the weekly percentage, never on the healthy 5h
-  # figure. Include the weekday because this sleep may cross a weekend; a bare
-  # clock is sufficient for a five-hour pause but ambiguous several days out.
+  # figure. Include the weekday so the next hourly probe remains unambiguous
+  # around midnight; a bare clock is sufficient inside a five-hour window.
   if [ "$park_window" = seven_day ]; then
     week_wake=$(date -r "$park_wake" '+%a %H:%M' 2>/dev/null)
     week_sleep="${ORANGE}💤${RESET}"

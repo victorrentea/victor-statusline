@@ -12,8 +12,17 @@ stop_gate() {
   if [ -n "$gate_pid" ]; then
     # The hook shell is waiting on sleep. Stop that child first so the shell can
     # run its EXIT trap and remove the marker instead of leaving an orphan.
-    if ! pkill -TERM -P "$gate_pid" 2>/dev/null; then
-      kill "$gate_pid" 2>/dev/null || true
+    pkill -TERM -P "$gate_pid" 2>/dev/null || true
+    kill -TERM "$gate_pid" 2>/dev/null || true
+    tries=0
+    while kill -0 "$gate_pid" 2>/dev/null && [ "$tries" -lt 50 ]; do
+      sleep 0.02
+      tries=$((tries + 1))
+    done
+    if kill -0 "$gate_pid" 2>/dev/null; then
+      fail=$((fail + 1)); printf 'FAIL  interrupt: parked gate did not stop on TERM\n'
+      pkill -KILL -P "$gate_pid" 2>/dev/null || true
+      kill -KILL "$gate_pid" 2>/dev/null || true
     fi
     wait "$gate_pid" 2>/dev/null || true
     gate_pid=""
@@ -42,6 +51,17 @@ assert_eq() {
   fi
 }
 
+assert_between() {
+  label=$1 actual=$2 minimum=$3 maximum=$4
+  if [ "$actual" -ge "$minimum" ] 2>/dev/null && [ "$actual" -le "$maximum" ] 2>/dev/null; then
+    pass=$((pass + 1)); printf 'ok    %s\n' "$label"
+  else
+    fail=$((fail + 1))
+    printf 'FAIL  %s\n      expected: %s..%s\n      got:      %s\n' \
+      "$label" "$minimum" "$maximum" "$actual"
+  fi
+}
+
 write_state() {
   jq -n --argjson u5 "$1" --argjson r5 "$2" --argjson m5 "$3" \
         --argjson u7 "$4" --argjson r7 "$5" --argjson m7 "$6" \
@@ -59,22 +79,87 @@ wait_for_marker() {
   done
 }
 
+line_count() {
+  [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0
+}
+
+probe="$TMP/weekly-probe.sh"
+printf '#!/bin/sh\nprintf "called\\n" >> "$CLAUDE_TEST_PROBE_CALLS"\nprintf "%%s %%s\\n" "$CLAUDE_TEST_PROBE_USED" "$CLAUDE_TEST_PROBE_RESET"\n' > "$probe"
+chmod +x "$probe"
+
 now=$(date +%s)
 five_reset=$((now + 1800))
 week_reset=$((now + 7200))
 
-# Weekly quota at exactly 1% left must park even though the 5h window is healthy.
+# Weekly quota at exactly 1% left parks only until the next hourly live probe,
+# not blindly until the advertised weekly reset.
 session=quota-gate-test-weekly
-write_state 88 "$five_reset" "$now" 99 "$week_reset" "$((now - 3600))"
+probe_calls="$TMP/weekly-first-probe.calls"
+write_state 88 "$five_reset" "$now" 99 "$week_reset" "$now"
 printf '{"session_id":"%s"}' "$session" \
-  | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 sh "$GATE" \
+  | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_SECS=3600 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-first-probe.stamp" \
+      CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
+      CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
+      CLAUDE_TEST_PROBE_USED=99 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE" \
       >/dev/null 2>&1 &
 gate_pid=$!
 marker="$HOME/.claude/quota-park/$session"
 wait_for_marker "$marker"
 contents=$(sed -n '1p' "$marker" 2>/dev/null)
+weekly_wake=$(printf '%s' "$contents" | cut -d' ' -f1)
+weekly_window=$(printf '%s' "$contents" | cut -d' ' -f2)
 assert_eq "weekly: one percent left parks on the seven-day window" \
-  "$contents" "$week_reset seven_day"
+  "$weekly_window" "seven_day"
+assert_between "weekly: park ends at the next hourly probe" \
+  "$weekly_wake" "$((now + 3599))" "$((now + 3605))"
+assert_eq "weekly: no prior real probe means probe immediately" \
+  "$(line_count "$probe_calls")" "1"
+stop_gate
+
+# A live probe can discover that quota was returned inside the same advertised
+# weekly window. In that case the queued request must be released immediately.
+probe_calls="$TMP/weekly-probe.calls"
+session=quota-gate-test-weekly-reset-early
+write_state 88 "$five_reset" "$now" 101 "$week_reset" "$((now - 3601))"
+printf '{"session_id":"%s"}' "$session" \
+  | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_SECS=3600 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-reset-probe.stamp" \
+      CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
+      CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
+      CLAUDE_TEST_PROBE_USED=0 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE"
+calls=$(line_count "$probe_calls")
+assert_eq "weekly: an overdue live probe runs once" "$calls" "1"
+if [ ! -f "$HOME/.claude/quota-park/$session" ]; then
+  pass=$((pass + 1)); printf 'ok    weekly: a mid-window quota return releases the request\n'
+else
+  fail=$((fail + 1)); printf 'FAIL  weekly: a mid-window quota return releases the request\n'
+fi
+
+# Until the next hour, every other hook must reuse that live "quota available"
+# result instead of either probing again or trusting a newly repinned stale 101.
+session=quota-gate-test-weekly-reset-cached
+write_state 88 "$five_reset" "$now" 101 "$week_reset" "$now"
+printf '{"session_id":"%s"}' "$session" \
+  | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_SECS=3600 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-reset-probe.stamp" \
+      CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
+      CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
+      CLAUDE_TEST_PROBE_USED=0 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE" \
+      >/dev/null 2>&1 &
+gate_pid=$!
+marker="$HOME/.claude/quota-park/$session"
+wait_for_marker "$marker"
+if ! kill -0 "$gate_pid" 2>/dev/null && [ ! -f "$marker" ]; then
+  pass=$((pass + 1)); printf 'ok    weekly: fresh available probe result overrides a repinned stale cache\n'
+else
+  fail=$((fail + 1)); printf 'FAIL  weekly: fresh available probe result overrides a repinned stale cache\n'
+fi
+assert_eq "weekly: live usage is probed at most once per hour" \
+  "$(line_count "$probe_calls")" "1"
 stop_gate
 
 # The existing 5h path remains active at 4% left (its strict <5 rule).
@@ -91,18 +176,29 @@ assert_eq "five-hour: existing low-quota path still parks" \
   "$contents" "$five_reset five_hour"
 stop_gate
 
-# If both limits are exhausted, waking at the earlier reset would still 429.
+# If both limits are exhausted, the hourly weekly probe is the first point at
+# which the combined gate might clear (the 5h reset below happens sooner).
 session=quota-gate-test-both
+probe_calls="$TMP/weekly-both-probe.calls"
 write_state 96 "$five_reset" "$now" 99 "$week_reset" "$now"
 printf '{"session_id":"%s"}' "$session" \
-  | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 sh "$GATE" \
+  | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_SECS=3600 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-both-probe.stamp" \
+      CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
+      CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
+      CLAUDE_TEST_PROBE_USED=99 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE" \
       >/dev/null 2>&1 &
 gate_pid=$!
 marker="$HOME/.claude/quota-park/$session"
 wait_for_marker "$marker"
 contents=$(sed -n '1p' "$marker" 2>/dev/null)
-assert_eq "both: later weekly reset is the limiting window" \
-  "$contents" "$week_reset seven_day"
+both_wake=$(printf '%s' "$contents" | cut -d' ' -f1)
+both_window=$(printf '%s' "$contents" | cut -d' ' -f2)
+assert_eq "both: weekly quota remains the limiting window" \
+  "$both_window" "seven_day"
+assert_between "both: weekly quota is reprobed hourly" \
+  "$both_wake" "$((now + 3599))" "$((now + 3605))"
 stop_gate
 
 # Two percent left is above the weekly threshold and must not pause work.
