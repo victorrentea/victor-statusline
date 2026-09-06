@@ -272,6 +272,87 @@ parameter expansion, not `sed`: `$ctx_render` is full of ESC and `&` bytes that
 
 ---
 
+## 1.2 Subagents in flight — `+{O5h*2,S5m}`
+
+Glued onto the model segment while subagents are running, and absent otherwise:
+
+```
+Opus 5h 60K/1M +{O5h*2,S5m} | ↓48% / 4h44 | $0.3 -2m ⊂ $1.1 | victor-statusline | (-1)-1% / 0m
+```
+
+Two Opus-5 agents at high effort plus one Sonnet-5 at medium. Each entry is
+`<model><effort>`, `*N` when a group has more than one, biggest group first.
+
+**Why it exists.** Claude Code's own agent list under the bar names the agents
+and shows their progress, but never says which model any of them got — and that
+is the fact that decides what a fan-out costs and how good its answers will be.
+The same `Task` lands on Opus, Sonnet, Fable or Haiku depending on the agent's
+frontmatter, an explicit `model` override at the call site, or the configured
+default subagent model, and none of those three is visible anywhere on screen.
+A 24-way fan-out on Fable and a 24-way fan-out on Opus look identical while they
+run and differ by an order of magnitude on the bill.
+
+**Grouped, not listed.** One line per agent is a roster; the bar has room for
+the *shape* of the fan-out, which is what you actually act on. `+{F5.1h*21,O5h*3}`
+says "the bulk of this is Fable, with three Opus stragglers" in twelve columns.
+
+**Where the data comes from.** Files Claude Code already writes, under
+`<transcript-dir>/<session-id>/subagents/`:
+
+| File | Carries |
+|------|---------|
+| `agent-<id>.meta.json` | `toolUseId`, `agentType`, the *requested* model alias |
+| `agent-<id>.jsonl` | the agent's own transcript: `message.model` and `effort` |
+
+The alias in the meta file (`"model":"opus"`) is a stand-in used only for the
+seconds between spawn and the agent's first completed response — it names a
+family, not a version, and it is absent entirely when the agent inherits. Once
+the agent's own transcript exists it says exactly what it got
+(`claude-fable-5-1`, `high`), and that supersedes the guess. Effort falls back
+to *this* session's level, because that is what an agent inherits unless its own
+definition overrides it.
+
+**Who is still running** is the only hard part, and the answer is in the parent
+transcript rather than in file mtimes:
+
+- a **synchronous** `Task` is done the moment its `toolUseId` shows up as a
+  `tool_result`;
+- an **async** agent is done when a task-notification carries its id in a
+  `<tool-use-id>` block;
+- the one `tool_result` that does **not** mean done is the *"Async agent
+  launched successfully"* receipt, which lands at spawn time.
+
+So the scan splits each transcript line on the `"tool_use_id":"` delimiter and
+discounts that receipt chunk alone, instead of skipping the whole line — one
+user turn can batch a synchronous result and an async launch together, and
+skipping the line would lose the real result sitting next to the receipt. The
+`tool_use` block that *starts* an agent carries the same id under `"id"`, never
+`"tool_use_id"`, so a spawn can never read as a completion.
+
+The mtime filter (`CLAUDE_SUB_STALE`, 900s) is only a floor against corpses: an
+agent killed with Esc, or orphaned by a crash, may never get a marker, and with
+no cutoff it would sit in the chip forever.
+
+**Known limit.** An async agent *resumed* with `SendMessage` after it already
+notified once counts as done — its original `toolUseId` keeps the marker it
+earned at the first stop. Undoing that needs the marker's timestamp compared
+against the agent file's, which is a date parse per render for one missing entry
+in a chip that is an approximation by design.
+
+**Cost.** Model and effort never change for a given agent, so they are resolved
+once and cached in `/tmp/claude-statusline-agents-v1-<sid>.txt` for the rest of
+the session; without that, a 24-way fan-out re-reads 24 agent transcripts every
+refresh to learn something settled the first time. The directory is stat'ed in
+one `stat(1)` call rather than one per agent, and the per-agent read stops after
+40 lines (`nextfile`) because both facts are on the first completed response —
+a long-running agent's transcript is megabytes, and none of it past the opening
+entries says anything new about which model it is on. Measured on a real
+24-agent session with a 1.1 MB parent transcript: **+80 ms** on a render that
+otherwise costs 320 ms, and nothing at all for a session that never spawned an
+agent (one `stat` on a directory that is not there).
+
+---
+
 ## 2. Quota & burn-rate — `↗98% / 4h47`
 
 Tracks the rolling **5-hour** rate-limit window.
@@ -1267,7 +1348,7 @@ To reproduce this exact status line: save the script below to `~/.claude/statusl
 ```sh
 #!/bin/sh
 # Claude Code status line:
-#   "Model/e (ctx% of SIZE) | 5h% / reset | spend | folder[@branch] | 7d quota"
+#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend | folder[@branch] | 7d quota"
 #
 # Ordered by how fast each figure moves: the model line is fixed, the 5h window
 # and the spend change within a turn, the folder changes when you cd, and the
@@ -1299,6 +1380,12 @@ fi
 # ---------------------------------------------------------------------------
 model=$(echo "$input" | jq -r '.model.display_name // "Claude"' | sed 's/ context)/)/')
 effort=$(echo "$input" | jq -r '.effort.level // empty')
+# Kept before either one is rewritten below: $model grows a size label and a
+# placeholder, $effort shrinks to a letter, and the subagent chip further down
+# needs both in their original form — it inherits them for agents that have not
+# said yet what they are running on.
+model_name="$model"
+effort_raw="$effort"
 # Abbreviated to its initial(s), in LOWER case. The effort level is a mode you
 # set and then rarely change, so the bar only has to CONFIRM it, not teach it —
 # and one letter buys back three or four columns on the most-read part of the
@@ -1584,7 +1671,7 @@ if [ -n "$_bt" ]; then
 fi
 unset _bt _bstate _mytty _ttyf
 
-out="${mic}$model"
+out="${mic}${model}@@SUB@@"
 
 # quota-gate.sh writes the wake epoch and the window that caused this terminal
 # to park. Old one-field markers predate weekly gating and are therefore 5h.
@@ -2564,6 +2651,212 @@ esac
 
 # --- Weekly quota, last cell (built above, next to its arithmetic) ----------
 [ -n "$week_seg" ] && out="$out | $week_seg"
+
+# --- Subagents in flight: "+{O5h*2,S5m}" glued onto the model segment -------
+# WHAT IT SAYS: how many subagents are working right now, on which brain, at
+# which effort — "+{O5h*2,S5m}" is two Opus-5-high agents plus one Sonnet-5-medium.
+# Claude Code's own agent list under the bar names the agents but never the model
+# they got, and that is the fact which decides what a fan-out costs and how good
+# its answers will be: the same Task lands on Opus, Sonnet, Fable or Haiku
+# depending on agent frontmatter, an explicit model override, or the configured
+# default subagent model — none of it visible anywhere on screen. Grouped rather
+# than listed one-per-agent because a 24-way fan-out is one decision, not 24: the
+# bar has room for its shape, not for the roster.
+#
+# WHERE IT COMES FROM: files Claude Code already writes, under
+#   <transcript-dir>/<session-id>/subagents/
+#     agent-<id>.meta.json   toolUseId, agentType, the requested model alias
+#     agent-<id>.jsonl       the agent's own transcript: message.model + effort
+# Nothing here probes a running process; it reads what the agents leave behind.
+#
+# WHO IS STILL RUNNING is the only hard part, and the answer is in the PARENT
+# transcript, not in mtimes: an agent is done the moment its toolUseId appears as
+# a tool_result (a synchronous Task returning) or inside a <tool-use-id> block
+# (the task-notification an async agent fires when it stops). The one tool_result
+# that does NOT mean done is the "Async agent launched successfully" receipt,
+# which lands at spawn time — so the scan splits each line on the id delimiter
+# and discounts that chunk alone, rather than skipping the whole line: one user
+# turn can batch a sync result and an async launch together.
+# The mtime filter is only a floor against corpses — an agent killed with Esc, or
+# orphaned by a crash, may never get a marker, and with no cutoff it would sit in
+# the chip forever.
+#
+# KNOWN LIMIT: an async agent RESUMED with SendMessage after it already notified
+# once counts as done, because its original toolUseId keeps the marker it earned
+# at the first stop. Undoing that needs the marker's timestamp compared against
+# the agent file's — a date parse per render, for one missing entry in a chip
+# that is an approximation by design.
+SUB_STALE="${CLAUDE_SUB_STALE:-900}"   # s of silence before an agent counts as a corpse
+SUB_TAIL="${CLAUDE_SUB_TAIL:-2000000}" # bytes of parent transcript scanned for done-markers
+sub_render=""
+_sdir=""
+[ -n "$tp" ] && _sdir="${tp%.jsonl}/subagents"
+if [ -n "$_sdir" ] && [ -d "$_sdir" ] && [ -n "${sid:-}" ]; then
+  # One stat(1) for the whole directory rather than one per agent: a wide
+  # fan-out is exactly when this code runs, and exactly when forking twenty-odd
+  # times per render would be felt.
+  _now=$(date +%s)
+  _fresh=""
+  _stat=$(stat -f '%m %N' "$_sdir"/agent-*.jsonl 2>/dev/null)
+  while IFS=' ' read -r _mt _p; do
+    case "$_mt" in ''|*[!0-9]*) continue ;; esac
+    [ $((_now - _mt)) -le "$SUB_STALE" ] || continue
+    _i=${_p##*/agent-}; _i=${_i%.jsonl}
+    _fresh="$_fresh,$_i"
+  done <<EOF
+$_stat
+EOF
+  _meta=""
+  if [ -n "$_fresh" ]; then
+    # id -> toolUseId + the model ALIAS that was requested. The alias is a
+    # stand-in only: it says "opus", not which Opus, and it is missing entirely
+    # when the agent inherits. It carries the chip through the seconds between
+    # spawn and the agent's first completed response; after that the agent's own
+    # transcript says what it actually got, and the alias is never read again.
+    _meta=$(awk -v want="$_fresh" '
+      BEGIN { n = split(want, a, ","); for (i = 1; i <= n; i++) if (a[i] != "") w[a[i]] = 1 }
+      {
+        id = FILENAME; sub(/.*\/agent-/, "", id); sub(/\.meta\.json$/, "", id)
+        if (!(id in w) || (id in seen)) next
+        seen[id] = 1
+        t = ""; if (match($0, /"toolUseId":"[^"]*"/)) t = substr($0, RSTART + 13, RLENGTH - 14)
+        m = ""; if (match($0, /"model":"[^"]*"/))     m = substr($0, RSTART + 9,  RLENGTH - 10)
+        if (t != "") print id " " t " " m
+      }' "$_sdir"/agent-*.meta.json 2>/dev/null)
+  fi
+  _running=""
+  if [ -n "$_meta" ]; then
+    # Through the environment, not -v: an awk -v assignment is a single line
+    # and runs backslash escapes over the value, and this one is a table.
+    _running=$(tail -c "$SUB_TAIL" "$tp" 2>/dev/null | _meta="$_meta" awk '
+      BEGIN {
+        n = split(ENVIRON["_meta"], rows, "\n")
+        for (i = 1; i <= n; i++) {
+          split(rows[i], f, " ")
+          if (f[2] != "") { live[f[2]] = f[1]; alias[f[1]] = f[3] }
+        }
+      }
+      {
+        n = split($0, parts, /"tool_use_id":"/)
+        for (i = 2; i <= n; i++) {
+          p = parts[i]; q = index(p, "\""); if (q < 2) continue
+          id = substr(p, 1, q - 1)
+          # A launch receipt is not a return value.
+          if ((id in live) && index(p, "Async agent launched successfully") == 0) delete live[id]
+        }
+        n = split($0, g, /<tool-use-id>/)
+        for (i = 2; i <= n; i++) {
+          q = index(g[i], "<"); if (q < 2) continue
+          id = substr(g[i], 1, q - 1)
+          if (id in live) delete live[id]
+        }
+      }
+      END { for (t in live) print live[t] " " alias[live[t]] }')
+  fi
+  if [ -n "$_running" ]; then
+    # Model and effort never change for a given agent, so they are resolved once
+    # and remembered for the rest of the session. Without this a 24-way fan-out
+    # re-reads 24 agent transcripts every five seconds to learn something that
+    # was already settled the first time.
+    _ac="/tmp/claude-statusline-agents-v1-${sid}.txt"
+    _known="|"
+    if [ -f "$_ac" ]; then
+      while IFS= read -r _line; do
+        [ -n "$_line" ] && _known="$_known$_line|"
+      done < "$_ac"
+    fi
+    _rows=""
+    set --
+    while IFS=' ' read -r _id _alias; do
+      [ -n "$_id" ] || continue
+      case "$_known" in
+        *"|$_id "*)
+          _hit=${_known#*"|$_id "}; _hit=${_hit%%"|"*}
+          _rows="$_rows
+$_id $_hit"
+          continue ;;
+      esac
+      set -- "$@" "$_sdir/agent-$_id.jsonl"
+      # Alias fallback, so a just-spawned agent is in the chip immediately rather
+      # than popping in once it has finished thinking. Effort is inherited from
+      # this session, because that is what an agent gets unless its own
+      # definition overrides it — and a wrong guess is corrected the moment the
+      # agent's transcript becomes readable.
+      [ -n "$_alias" ] || _alias="$model_name"
+      _rows="$_rows
+$_id $_alias $effort_raw"
+    done <<EOF
+$_running
+EOF
+    if [ "$#" -gt 0 ]; then
+      # Both facts are on the agent's first completed response, so this reads
+      # the head of each file and leaves: a long-running agent's transcript is
+      # megabytes, and none of it after the opening entries says anything new
+      # about which model it is on.
+      _new=$(awk '
+        FNR > 40 { nextfile }
+        /"type":"assistant"/ && /"effort":"/ && /"model":"/ {
+          id = FILENAME; sub(/.*\/agent-/, "", id); sub(/\.jsonl$/, "", id)
+          m = ""; if (match($0, /"model":"[^"]*"/))  m = substr($0, RSTART + 9,  RLENGTH - 10)
+          e = ""; if (match($0, /"effort":"[^"]*"/)) e = substr($0, RSTART + 10, RLENGTH - 11)
+          if (m != "") { print id " " m " " e; nextfile }
+        }' "$@" 2>/dev/null)
+      set --
+      if [ -n "$_new" ]; then
+        printf '%s\n' "$_new" >> "$_ac"
+        # Appended AFTER the guesses, and the aggregator keeps the last word per
+        # agent: what the agent actually ran on overrides what was asked for.
+        _rows="$_rows
+$_new"
+      fi
+    fi
+    sub_chip=$(printf '%s\n' "$_rows" | awk '
+      # "claude-fable-5-1" -> F5.1, "claude-haiku-4-5-20251001" -> H4.5,
+      # "Opus 5 (1M)" -> O5, the bare alias "opus" -> O. Family initial plus
+      # whatever version the name carries: the initial is what the eye reads, the
+      # digits are what tell two generations apart, everything else is noise.
+      function abbr(s,   v, i, n, p) {
+        s = tolower(s)
+        sub(/^claude-/, "", s)
+        sub(/ *\(.*\)$/, "", s)
+        sub(/\[[^]]*\]$/, "", s)
+        gsub(/[ _]/, "-", s)
+        sub(/-2[0-9][0-9][0-9][0-9][0-9][0-9][0-9]$/, "", s)
+        n = split(s, p, "-")
+        v = ""
+        for (i = 2; i <= n; i++) v = v (v == "" ? "" : ".") p[i]
+        return toupper(substr(p[1], 1, 1)) v
+      }
+      # Same table as the main model segment above, and for the same reason: "m"
+      # is medium, so "max" stays spelled out rather than colliding with it.
+      function eff(e) {
+        if (e == "low")    return "l"
+        if (e == "medium") return "m"
+        if (e == "high")   return "h"
+        if (e == "xhigh")  return "xh"
+        if (e == "max")    return "max"
+        return e
+      }
+      NF >= 2 { mdl[$1] = $2; lvl[$1] = $3 }
+      END {
+        for (id in mdl) { k = abbr(mdl[id]) eff(lvl[id]); if (!(k in c)) ord[++n] = k; c[k]++ }
+        if (!n) exit
+        # Biggest group first: the chip answers "what is the bulk of this
+        # fan-out running on" before it answers "what else is in there".
+        for (i = 2; i <= n; i++) {
+          k = ord[i]
+          for (j = i - 1; j >= 1 && (c[ord[j]] < c[k] || (c[ord[j]] == c[k] && ord[j] > k)); j--) ord[j + 1] = ord[j]
+          ord[j + 1] = k
+        }
+        s = ""
+        for (i = 1; i <= n; i++) s = s (s == "" ? "" : ",") ord[i] (c[ord[i]] > 1 ? "*" c[ord[i]] : "")
+        printf "+{%s}", s
+      }')
+    [ -n "$sub_chip" ] && sub_render=" ${GREEN}${sub_chip}${RESET}"
+  fi
+fi
+unset _sdir _stat _fresh _meta _running _known _rows _new _ac _line _id _alias _hit _mt _p _i _now
+out="${out%%@@SUB@@*}${sub_render}${out#*@@SUB@@}"
 
 # --- Resolve the context counter's placeholder, now that the cache state is known.
 # Three reasons the number stops being calm blue, in priority order:

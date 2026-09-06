@@ -156,6 +156,81 @@ JSON
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
 assert_contains "weekly probe: timestamp-only failed probe is not quota data" "$out" "75%"
 
+# --- Case: subagents in flight ----------------------------------------------
+# Builds a session directory shaped like the one Claude Code writes -- a parent
+# transcript plus <sid>/subagents/agent-<id>.{meta.json,jsonl} -- and checks the
+# three judgements the chip has to make: who is still running, what each one is
+# running on, and how the groups collapse.
+session="statusline-test-subagents"
+proj="$HOME/.claude/projects/test"
+sub="$proj/$session/subagents"
+mkdir -p "$sub"
+tp="$proj/$session.jsonl"
+
+# id / model / effort / requested-alias
+mk_agent() {
+  printf '{"agentType":"general-purpose","description":"t","toolUseId":"toolu_%s","spawnDepth":1,"model":"%s"}' \
+    "$1" "$4" > "$sub/agent-$1.meta.json"
+  printf '{"type":"user","isSidechain":true,"agentId":"%s","message":{"role":"user"}}\n{"type":"assistant","agentId":"%s","effort":"%s","message":{"role":"assistant","model":"%s"}}\n' \
+    "$1" "$1" "$3" "$2" > "$sub/agent-$1.jsonl"
+}
+mk_agent A claude-opus-5              high   opus
+mk_agent B claude-opus-5              high   opus
+mk_agent C claude-sonnet-5            medium sonnet
+mk_agent D claude-opus-5              high   opus
+mk_agent E claude-haiku-4-5-20251001  high   haiku
+mk_agent F claude-fable-5-1           high   fable
+mk_agent G claude-opus-5              high   opus
+
+{
+  # The spawn itself: tool_use blocks carry the id as "id", never as
+  # "tool_use_id", so none of these may read as a finished agent.
+  printf '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"toolu_A","name":"Task"},{"type":"tool_use","id":"toolu_D","name":"Task"}]}}\n'
+  # D returned; E was launched async in the SAME user turn. The launch receipt
+  # must not be mistaken for D's result, nor D's result for E's.
+  printf '{"type":"user","message":{"content":[{"tool_use_id":"toolu_D","type":"tool_result","content":"the report"},{"tool_use_id":"toolu_E","type":"tool_result","content":[{"type":"text","text":"Async agent launched successfully. agentId: E"}]}]}}\n'
+  # F was launched async and has since notified that it stopped.
+  printf '{"type":"user","message":{"content":[{"tool_use_id":"toolu_F","type":"tool_result","content":[{"type":"text","text":"Async agent launched successfully. agentId: F"}]}]}}\n'
+  printf '{"type":"user","message":{"content":"<task-notification>\\n<task-id>F</task-id>\\n<tool-use-id>toolu_F</tool-use-id>\\n<status>completed</status>\\n</task-notification>"}}\n'
+} > "$tp"
+
+# G never got a marker but has been silent for hours: a corpse, not a worker.
+touch -t 202001010000 "$sub/agent-G.jsonl"
+
+payload=$(cat <<JSON
+{"session_id":"$session","model":{"display_name":"Opus 5 (1M context)"},
+ "effort":{"level":"high"},"transcript_path":"$tp",
+ "context_window":{"used_percentage":6,"context_window_size":1000000},
+ "rate_limits":{"five_hour":{"used_percentage":40,"resets_at":$reset}}}
+JSON
+)
+out=$(printf '%s' "$payload" | sh "$SCRIPT")
+assert_contains     "subagents: groups by model+effort, biggest first" "$out" "+{O5h*2,H4.5h,S5m}"
+assert_contains     "subagents: chip hangs off the model segment"      "$out" "/1M +{"
+assert_not_contains "subagents: a returned Task is gone"               "$out" "*3"
+assert_not_contains "subagents: a notified async agent is gone"        "$out" "F5.1"
+assert_not_contains "subagents: a silent corpse is not counted"        "$out" "*4"
+
+# Second render, same state: the per-agent facts now come from the cache file
+# rather than from re-reading seven agent transcripts. Same answer either way.
+out=$(printf '%s' "$payload" | sh "$SCRIPT")
+assert_contains "subagents: cached second render is identical" "$out" "+{O5h*2,H4.5h,S5m}"
+
+# A session that never spawned anything renders no chip at all.
+session="statusline-test-no-subagents"
+tp="$proj/$session.jsonl"
+printf '{"type":"assistant","message":{"content":[]}}\n' > "$tp"
+payload=$(cat <<JSON
+{"session_id":"$session","model":{"display_name":"Opus 5 (1M context)"},
+ "effort":{"level":"high"},"transcript_path":"$tp",
+ "context_window":{"used_percentage":6,"context_window_size":1000000},
+ "rate_limits":{"five_hour":{"used_percentage":40,"resets_at":$reset}}}
+JSON
+)
+out=$(printf '%s' "$payload" | sh "$SCRIPT")
+assert_not_contains "no subagents: no chip, no placeholder" "$out" "+{"
+assert_not_contains "no subagents: placeholder is resolved" "$out" "@@SUB@@"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
