@@ -3,7 +3,7 @@
 A rich one-line status bar for **GitHub Copilot CLI**. Example:
 
 ```
-🤖 opus-5/high 55K/264K (21%) | 21%↗ ($1.1≈225/1048 AIC) left today | +15% = 98% ($98≈19694 AIC) left / 19wd8h
+🤖 opus-5/high 55K/264K (21%) | 21%↗ ($2.3≈225/1048 AIC) left today | +15% = 98% ($197≈19694 AIC) left / 19wd8h
 ```
 
 Three ` | `-separated segments:
@@ -21,8 +21,8 @@ Three ` | `-separated segments:
    elapsed − credits burned), the `% left`, the absolutes `($ ≈ N AIC)`, then the
    **working** days + hours until the monthly quota resets (weekends excluded).
 
-Every credit figure carries its **list-price dollar equivalent** at 200 AIC = \$1
-(`$98≈19694 AIC`). Credits are an abstract unit invented for billing; the dollar
+Every credit figure carries its **list-price dollar equivalent** at 100 AIC = \$1
+(`$197≈19694 AIC`). Credits are an abstract unit invented for billing; the dollar
 is the one both a daily burn rate and a monthly balance can be judged in without
 mental arithmetic. The `≈` marks it as a fixed conversion, not an invoice.
 
@@ -68,7 +68,7 @@ The relevant snapshot is `quota_snapshots.premium_interactions`
 ```bash
 #!/usr/bin/env bash
 # Copilot CLI status line. Example output:
-#   🤖 sonnet-5/med 55K/264K (21%) | 74%↗ ($1.3≈257/345 AIC) left today | +3% = 95% ($33≈6646 AIC) left / 20wd7h
+#   🤖 sonnet-5/med 55K/264K (21%) | 74%↗ ($2.6≈257/345 AIC) left today | +3% = 95% ($66≈6646 AIC) left / 20wd7h
 #
 #   • model: display_name with the "claude-" prefix stripped, the reasoning
 #     effort abbreviated after a "/" (medium→med, xhigh, max…) and the
@@ -90,7 +90,7 @@ The relevant snapshot is `quota_snapshots.premium_interactions`
 #     rather than an arrow so it reads in the same unit as the "% left" beside it
 #     — mirrors the weekly segment of victor-claude-statusline.md.
 #   • money: both credit figures are prefixed with their list-price equivalent at
-#     AIC_PER_USD credits per dollar ("$99≈19819 AIC"). Credits are an abstract
+#     AIC_PER_USD credits per dollar ("$198≈19819 AIC"). Credits are an abstract
 #     unit — the dollar is the one both a burn rate and a balance can be judged
 #     in without doing arithmetic in your head. "≈" not "=" because the rate is
 #     a fixed conversion, not an invoice.
@@ -149,7 +149,7 @@ def human(n):
 # GitHub bills AI Credits at this many per dollar of list price; every credit
 # figure on the line is shown in dollars too, because "$99" lands instantly
 # where "19819 AIC" needs a conversion done in your head first.
-AIC_PER_USD = 200.0
+AIC_PER_USD = 100.0
 
 def usd(credits):
     """Credits as list-price dollars: one decimal under $10, whole above."""
@@ -491,7 +491,7 @@ Based on `used/limit`: **≥95% → red**, **≥65% → yellow**, else default.
 
 ### Credits in dollars
 
-`AIC_PER_USD = 200.0` near the top of the Python block converts every credit
+`AIC_PER_USD = 100.0` near the top of the Python block converts every credit
 figure to list-price dollars, printed as `$X≈N AIC`. Under \$10 it keeps one
 decimal (`$1.1`) because a day's burn is a small number where the tenth carries
 the information; at or above \$10 it rounds to whole dollars, since nobody reads

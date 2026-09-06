@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copilot CLI status line. Example output:
-#   🤖 sonnet-5/med 55K/264K (21%) | 74%↗ ($1.3≈257/345 AIC) left today | +3% = 95% ($33≈6646 AIC) left / 20wd7h
+#   🤖 sonnet-5/med 55K/264K (21%) | 74%↗ ($2.6≈257/345 AIC) left today | +3% = 95% ($66≈6646 AIC) left / 20wd7h
 #
 #   • model: display_name with the "claude-" prefix stripped, the reasoning
 #     effort abbreviated after a "/" (medium→med, xhigh, max…) and the
@@ -22,7 +22,7 @@
 #     rather than an arrow so it reads in the same unit as the "% left" beside it
 #     — mirrors the weekly segment of victor-claude-statusline.md.
 #   • money: both credit figures are prefixed with their list-price equivalent at
-#     AIC_PER_USD credits per dollar ("$99≈19819 AIC"). Credits are an abstract
+#     AIC_PER_USD credits per dollar ("$198≈19819 AIC"). Credits are an abstract
 #     unit — the dollar is the one both a burn rate and a balance can be judged
 #     in without doing arithmetic in your head. "≈" not "=" because the rate is
 #     a fixed conversion, not an invoice.
@@ -81,7 +81,7 @@ def human(n):
 # GitHub bills AI Credits at this many per dollar of list price; every credit
 # figure on the line is shown in dollars too, because "$99" lands instantly
 # where "19819 AIC" needs a conversion done in your head first.
-AIC_PER_USD = 200.0
+AIC_PER_USD = 100.0
 
 def usd(credits):
     """Credits as list-price dollars: one decimal under $10, whole above."""
