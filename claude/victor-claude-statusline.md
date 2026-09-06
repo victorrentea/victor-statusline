@@ -312,6 +312,13 @@ the agent's own transcript exists it says exactly what it got
 to *this* session's level, because that is what an agent inherits unless its own
 definition overrides it.
 
+A model with no reasoning-effort setting at all — Haiku — writes no `effort`
+field, and renders bare: `+{H4.5*2,S5h}` is two Haiku 4.5 agents and one
+Sonnet 5 at high. This was found by running the thing: requiring `effort`
+alongside `model` when reading an agent's transcript meant every Haiku agent
+failed to resolve, was never cached, and fell back to the alias — rendering as
+`Hh`, which loses the version *and* claims an effort level Haiku does not have.
+
 **Who is still running** is the only hard part, and the answer is in the parent
 transcript rather than in file mtimes:
 
@@ -2793,9 +2800,13 @@ EOF
       # the head of each file and leaves: a long-running agent's transcript is
       # megabytes, and none of it after the opening entries says anything new
       # about which model it is on.
+      # Model is required, effort is not: Haiku has no reasoning-effort setting
+      # and writes no `effort` field at all, so demanding one meant every Haiku
+      # agent failed to resolve, was never cached, and rendered as the bare alias
+      # "H" carrying THIS session's effort — a letter it does not have.
       _new=$(awk '
         FNR > 40 { nextfile }
-        /"type":"assistant"/ && /"effort":"/ && /"model":"/ {
+        /"type":"assistant"/ && /"model":"/ {
           id = FILENAME; sub(/.*\/agent-/, "", id); sub(/\.jsonl$/, "", id)
           m = ""; if (match($0, /"model":"[^"]*"/))  m = substr($0, RSTART + 9,  RLENGTH - 10)
           e = ""; if (match($0, /"effort":"[^"]*"/)) e = substr($0, RSTART + 10, RLENGTH - 11)

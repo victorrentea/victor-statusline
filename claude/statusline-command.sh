@@ -1445,9 +1445,13 @@ EOF
       # the head of each file and leaves: a long-running agent's transcript is
       # megabytes, and none of it after the opening entries says anything new
       # about which model it is on.
+      # Model is required, effort is not: Haiku has no reasoning-effort setting
+      # and writes no `effort` field at all, so demanding one meant every Haiku
+      # agent failed to resolve, was never cached, and rendered as the bare alias
+      # "H" carrying THIS session's effort — a letter it does not have.
       _new=$(awk '
         FNR > 40 { nextfile }
-        /"type":"assistant"/ && /"effort":"/ && /"model":"/ {
+        /"type":"assistant"/ && /"model":"/ {
           id = FILENAME; sub(/.*\/agent-/, "", id); sub(/\.jsonl$/, "", id)
           m = ""; if (match($0, /"model":"[^"]*"/))  m = substr($0, RSTART + 9,  RLENGTH - 10)
           e = ""; if (match($0, /"effort":"[^"]*"/)) e = substr($0, RSTART + 10, RLENGTH - 11)

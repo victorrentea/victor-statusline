@@ -167,18 +167,20 @@ sub="$proj/$session/subagents"
 mkdir -p "$sub"
 tp="$proj/$session.jsonl"
 
-# id / model / effort / requested-alias
+# id / model / effort ("-" = none, as Haiku writes it) / requested-alias
 mk_agent() {
   printf '{"agentType":"general-purpose","description":"t","toolUseId":"toolu_%s","spawnDepth":1,"model":"%s"}' \
     "$1" "$4" > "$sub/agent-$1.meta.json"
-  printf '{"type":"user","isSidechain":true,"agentId":"%s","message":{"role":"user"}}\n{"type":"assistant","agentId":"%s","effort":"%s","message":{"role":"assistant","model":"%s"}}\n' \
-    "$1" "$1" "$3" "$2" > "$sub/agent-$1.jsonl"
+  eff=",\"effort\":\"$3\""
+  [ "$3" = "-" ] && eff=""
+  printf '{"type":"user","isSidechain":true,"agentId":"%s","message":{"role":"user"}}\n{"type":"assistant","agentId":"%s"%s,"message":{"role":"assistant","model":"%s"}}\n' \
+    "$1" "$1" "$eff" "$2" > "$sub/agent-$1.jsonl"
 }
 mk_agent A claude-opus-5              high   opus
 mk_agent B claude-opus-5              high   opus
 mk_agent C claude-sonnet-5            medium sonnet
 mk_agent D claude-opus-5              high   opus
-mk_agent E claude-haiku-4-5-20251001  high   haiku
+mk_agent E claude-haiku-4-5-20251001  -      haiku
 mk_agent F claude-fable-5-1           high   fable
 mk_agent G claude-opus-5              high   opus
 
@@ -205,7 +207,8 @@ payload=$(cat <<JSON
 JSON
 )
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
-assert_contains     "subagents: groups by model+effort, biggest first" "$out" "+{O5h*2,H4.5h,S5m}"
+assert_contains     "subagents: groups by model+effort, biggest first" "$out" "+{O5h*2,H4.5,S5m}"
+assert_not_contains "subagents: no effort letter is invented for Haiku" "$out" "H4.5h"
 assert_contains     "subagents: chip hangs off the model segment"      "$out" "/1M +{"
 assert_not_contains "subagents: a returned Task is gone"               "$out" "*3"
 assert_not_contains "subagents: a notified async agent is gone"        "$out" "F5.1"
@@ -214,7 +217,7 @@ assert_not_contains "subagents: a silent corpse is not counted"        "$out" "*
 # Second render, same state: the per-agent facts now come from the cache file
 # rather than from re-reading seven agent transcripts. Same answer either way.
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
-assert_contains "subagents: cached second render is identical" "$out" "+{O5h*2,H4.5h,S5m}"
+assert_contains "subagents: cached second render is identical" "$out" "+{O5h*2,H4.5,S5m}"
 
 # A session that never spawned anything renders no chip at all.
 session="statusline-test-no-subagents"
