@@ -1296,10 +1296,71 @@ fi
 # trains the eye to skip the field.
 branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
 case "$branch" in
-  ''|master|main) ;;
-  *) loc="${loc}@${branch}" ;;
+  ''|master|main) branch_sfx= ;;
+  *) branch_sfx="@${branch}" ;;
 esac
-[ -n "$loc" ] && out="$out | ${TEAL}${loc}${RESET}"
+
+# --- The folder chip: one background colour per folder, stable forever -------
+# The folder name is painted ON a colour derived from its path. This replaces a
+# sibling hook that tinted the whole Terminal TAB the same way: same idea — know
+# which project a window belongs to without reading a word — but confined to a
+# few characters instead of the entire window, where it was distracting enough
+# to be worth undoing, and where it also fought everything else that wanted to
+# set a tab's background.
+#
+# Twelve hues, one every 30 degrees around the wheel, all dark enough that white
+# text sits on them at readable contrast. That is also why the chip carries its
+# OWN foreground (231) instead of inheriting the bar's: this line is read on a
+# white IntelliJ terminal as often as on a black one, and a segment that brings
+# its own background is the one part of the bar that need not care which.
+#
+# 256-colour and not 24-bit, deliberately: Apple Terminal — where this bar spends
+# its life — has no truecolor, and a `48;2;r;g;b` chip degrades there to no chip
+# at all.
+FOLDER_HUES='124 130 100 64 28 29 30 25 19 61 91 126'
+
+# The hash costs a fork and this bar re-renders every second in every open
+# session, so it is computed only when the directory actually CHANGES, against a
+# cache keyed by $PPID — claude's own pid: free, stable for the life of the
+# session, and per-session, so two windows in different folders cannot
+# invalidate each other's answer every render. Steady state is one builtin
+# `read` and no subprocess. Same reasoning, and the same key, as the cwd
+# publisher above.
+_chip_file="$HOME/.claude/cwd/.chip-$PPID"
+_chip_idx=''
+_chip_cwd=''
+[ -r "$_chip_file" ] && read -r _chip_idx _chip_cwd < "$_chip_file" 2>/dev/null
+if [ "$_chip_cwd" != "$cwd" ]; then
+  # cksum, not shasum: the hash only has to spread paths over twelve buckets,
+  # and it is the cheaper fork. The index is written FIRST so that `read idx cwd`
+  # reassembles a path containing spaces (~/Library/Application Support/…) from
+  # the tail field.
+  _chip_idx=$(printf '%s' "$cwd" | cksum 2>/dev/null | cut -d' ' -f1)
+  case "$_chip_idx" in
+    ''|*[!0-9]*) _chip_idx=0 ;;
+    *) _chip_idx=$(( _chip_idx % 12 )) ;;
+  esac
+  { mkdir -p "$HOME/.claude/cwd" \
+      && printf '%s %s\n' "$_chip_idx" "$cwd" > "$_chip_file"; } 2>/dev/null || :
+fi
+_chip=''
+_i=0
+for _hue in $FOLDER_HUES; do
+  if [ "$_i" -eq "${_chip_idx:-0}" ]; then
+    _chip="${ESC}[48;5;${_hue}m${ESC}[38;5;231m"
+    break
+  fi
+  _i=$(( _i + 1 ))
+done
+# Anything unexpected above leaves the folder readable in the old teal rather
+# than unpainted: the chip is a convenience, never a reason for a blank segment.
+[ -n "$_chip" ] || _chip="$TEAL"
+
+# The branch stays TEAL and OUTSIDE the chip. The chip answers "which project",
+# and a branch name is not part of that answer — colouring it too would make the
+# same folder look like two different ones depending on where its HEAD is.
+[ -n "$branch_sfx" ] && branch_sfx="${TEAL}${branch_sfx}${RESET}"
+[ -n "$loc" ] && out="$out | ${_chip}${loc}${RESET}${branch_sfx}"
 
 # --- Weekly quota, last cell (built above, next to its arithmetic) ----------
 [ -n "$week_seg" ] && out="$out | $week_seg"
