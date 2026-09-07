@@ -1235,7 +1235,39 @@ fi
 # frame even though it now sits a line below it.
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 [ -n "$cwd" ] || cwd=$PWD
-loc=$(basename "$cwd")
+
+# THE NAME SHOWN IS THE REPO'S, NOT THE DIRECTORY'S: in petclinic/backend the
+# segment still reads `petclinic`. A bare `backend` is the one answer this
+# segment can give that is actively misleading — half the repos here have a
+# `backend`, a `docs`, a `src`, so the landmark disappeared exactly when you had
+# descended far enough to need it, and two windows in two different projects
+# printed the same word. The enclosing repo is the coarsest thing that is still
+# true and it is what the eye is actually looking for; a worktree names itself,
+# since `--show-toplevel` stops at the linked worktree rather than the main
+# repo (§6). Outside a repo (~/workspace itself, $HOME) there is no root to find
+# and the directory's own name is all there is.
+#
+# CACHED, for the reason the chip below is cached: this is a fork, the bar
+# re-renders every second in every open session, and the answer only changes
+# when you cd. Two lines and the key first, so that a path containing spaces
+# survives a builtin `read` with no quoting games. An empty second line means
+# "asked, not a repo" — the miss is worth caching too, since ~/workspace is a
+# non-repo and is where most of these sessions are launched.
+_repo_file="$HOME/.claude/cwd/.repo-$PPID"
+_repo_key=''
+_repo_root=''
+[ -r "$_repo_file" ] && { read -r _repo_key; read -r _repo_root; } < "$_repo_file" 2>/dev/null
+if [ "$_repo_key" != "$cwd" ]; then
+  _repo_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
+  { mkdir -p "$HOME/.claude/cwd" \
+      && printf '%s\n%s\n' "$cwd" "$_repo_root" > "$_repo_file"; } 2>/dev/null || :
+fi
+# What the segment names, and what the chip is hashed from — the two have to be
+# the same string, or petclinic and petclinic/backend would print one name in
+# two colours.
+locpath=${_repo_root:-$cwd}
+loc=$(basename "$locpath")
+unset _repo_file _repo_key _repo_root
 
 # --- Publish it, keyed by the terminal ----------------------------------------
 # Walkie Talkie draws the bound terminal's folder on its overlay chip and had no
@@ -1338,17 +1370,17 @@ FOLDER_CHIPS='25:231 61:231 91:231 126:231 28:231 30:231 100:231 130:231 19:231 
 # holding an index that may now point past the end of a shorter palette.
 _chip_file="$HOME/.claude/cwd/.chip-$PPID"
 _chip_sum=''
-_chip_cwd=''
-[ -r "$_chip_file" ] && read -r _chip_sum _chip_cwd < "$_chip_file" 2>/dev/null
-if [ "$_chip_cwd" != "$cwd" ]; then
+_chip_key=''
+[ -r "$_chip_file" ] && read -r _chip_sum _chip_key < "$_chip_file" 2>/dev/null
+if [ "$_chip_key" != "$locpath" ]; then
   # cksum, not shasum: the hash only has to spread paths over the palette, and
-  # it is the cheaper fork. The sum is written FIRST so that `read sum cwd`
+  # it is the cheaper fork. The sum is written FIRST so that `read sum path`
   # reassembles a path containing spaces (~/Library/Application Support/…) out
   # of the tail field.
-  _chip_sum=$(printf '%s' "$cwd" | cksum 2>/dev/null | cut -d' ' -f1)
+  _chip_sum=$(printf '%s' "$locpath" | cksum 2>/dev/null | cut -d' ' -f1)
   case "$_chip_sum" in ''|*[!0-9]*) _chip_sum=0 ;; esac
   { mkdir -p "$HOME/.claude/cwd" \
-      && printf '%s %s\n' "$_chip_sum" "$cwd" > "$_chip_file"; } 2>/dev/null || :
+      && printf '%s %s\n' "$_chip_sum" "$locpath" > "$_chip_file"; } 2>/dev/null || :
 fi
 _chip_n=0
 for _pair in $FOLDER_CHIPS; do _chip_n=$(( _chip_n + 1 )); done

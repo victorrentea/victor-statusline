@@ -1033,9 +1033,9 @@ timeouts remain, although an individual weekly sleep is now only about an hour.
 
 ## 5. Location — `ai@fix-cache`
 
-Second-to-last segment: the **folder**, plus `@branch` when the branch is not the
-trunk. The folder name sits on a **colour chip** — a background hashed from its
-path, one of twenty combinations, so a folder always looks the same (see
+Second-to-last segment: the **repo**, plus `@branch` when the branch is not the
+trunk. The name sits on a **colour chip** — a background hashed from its
+path, one of twenty combinations, so a project always looks the same (see
 below). The `@branch` stays **teal** (256-colour 80, `#5fd7d7`) and outside
 the chip — the closest match to the border Claude Code draws around the
 prompt, so that half still reads as part of the same frame.
@@ -1045,9 +1045,24 @@ prompt, so that half still reads as part of the same frame.
 | not a repo | `workspace` |
 | repo on `master`/`main` | `ai` |
 | repo off the trunk | `ai@fix-cache` |
+| **a directory inside the repo** — `petclinic/backend` | `petclinic@ing26` |
 | detached HEAD | `ai` |
 | fresh `git init`, no commits yet | `ai@fix-cache` |
 
+- **It names the repo, not the directory.** `cd petclinic/backend` and the
+  segment still reads `petclinic`. A bare `backend` is the one answer this
+  segment can give that is actively *misleading*: half the repos here have a
+  `backend`, a `docs`, a `src`, so the landmark used to vanish exactly when you
+  had descended far enough to need it, and two windows in two unrelated projects
+  printed the same word. The enclosing repo — `git rev-parse --show-toplevel` —
+  is the coarsest thing that is still true, and it is what the eye is looking
+  for. Outside a repo there is no root to find, so the directory's own name is
+  what is left (`workspace`, `☢️ victorrentea`'s `victorrentea`). A linked
+  worktree names *itself*, because `--show-toplevel` stops at the worktree, not
+  at the main repo (§6).
+- **The chip is hashed from that same string**, not from the cwd — otherwise
+  `petclinic` and `petclinic/backend` would print one name in two colours, which
+  is worse than either answer alone.
 - **Trunk branches are omitted**: `master`/`main` is the default state, so naming
   it trains the eye to skip the field. No `@branch` ⇒ you're on the trunk, and any
   `@something` you *do* see is worth reading.
@@ -1056,7 +1071,13 @@ prompt, so that half still reads as part of the same frame.
   exactly when you most want to be told where you are.
 - **One git call per render, not two.** The bar re-renders at
   `refreshInterval: 1`, so a subprocess here costs once a second, not once a
-  prompt. That is why this segment does *not* resolve worktrees, which needs two
+  prompt. Only the branch is asked for on every render; the repo root is a
+  second `rev-parse` that runs **only when you `cd`**, cached in
+  `~/.claude/cwd/.repo-$PPID` exactly like the chip below — two lines, the cwd
+  first so a path containing spaces survives a builtin `read` with no quoting
+  games, and an empty second line meaning *asked, not a repo* (worth caching
+  too: `~/workspace` is not a repo and is where most sessions are launched).
+  That budget is also why the segment does not resolve worktrees, which needs two
   more `rev-parse` calls; a worktree still shows its own directory name, just
   without the `<main-repo>@<branch>/<worktree>` expansion (§6).
 
@@ -1067,10 +1088,11 @@ prompt, so that half still reads as part of the same frame.
 
 ### The folder chip — twenty combinations, hashed from the path
 
-The folder name sits on a background colour picked from a hash of its full path.
-Same folder, same chip, in every window and after every restart: `petclinic` is
-the same chip in the session you opened this morning and in the one you open
-next month.
+The name sits on a background colour picked from a hash of the full path it was
+derived from — the repo root, or the cwd when there is no repo. Same project,
+same chip, in every window and after every restart: `petclinic` is the same chip
+in the session you opened this morning, in the one you open next month, and in
+the one sitting three directories deep inside it.
 
 **Twenty combinations, and half of them inverted** — dark text on a pale
 background alongside white text on a dark one:
@@ -1100,7 +1122,7 @@ right next to it for when you need to be sure.
 no truecolor: a `48;2;r;g;b` chip degrades there to no chip at all. Every value
 is a cube colour, so they survive.
 
-**The hash is computed only when you `cd`.** It costs a fork, and this bar
+**The hash is computed only when the displayed path changes.** It costs a fork, and this bar
 re-renders every second in every open session — the exact shape of load that once
 made the whole machine feel slow. So it is cached in `~/.claude/cwd/.chip-$PPID`
 and re-derived only when the directory actually changes; steady state is one
@@ -2647,7 +2669,39 @@ fi
 # frame even though it now sits a line below it.
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty')
 [ -n "$cwd" ] || cwd=$PWD
-loc=$(basename "$cwd")
+
+# THE NAME SHOWN IS THE REPO'S, NOT THE DIRECTORY'S: in petclinic/backend the
+# segment still reads `petclinic`. A bare `backend` is the one answer this
+# segment can give that is actively misleading — half the repos here have a
+# `backend`, a `docs`, a `src`, so the landmark disappeared exactly when you had
+# descended far enough to need it, and two windows in two different projects
+# printed the same word. The enclosing repo is the coarsest thing that is still
+# true and it is what the eye is actually looking for; a worktree names itself,
+# since `--show-toplevel` stops at the linked worktree rather than the main
+# repo (§6). Outside a repo (~/workspace itself, $HOME) there is no root to find
+# and the directory's own name is all there is.
+#
+# CACHED, for the reason the chip below is cached: this is a fork, the bar
+# re-renders every second in every open session, and the answer only changes
+# when you cd. Two lines and the key first, so that a path containing spaces
+# survives a builtin `read` with no quoting games. An empty second line means
+# "asked, not a repo" — the miss is worth caching too, since ~/workspace is a
+# non-repo and is where most of these sessions are launched.
+_repo_file="$HOME/.claude/cwd/.repo-$PPID"
+_repo_key=''
+_repo_root=''
+[ -r "$_repo_file" ] && { read -r _repo_key; read -r _repo_root; } < "$_repo_file" 2>/dev/null
+if [ "$_repo_key" != "$cwd" ]; then
+  _repo_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
+  { mkdir -p "$HOME/.claude/cwd" \
+      && printf '%s\n%s\n' "$cwd" "$_repo_root" > "$_repo_file"; } 2>/dev/null || :
+fi
+# What the segment names, and what the chip is hashed from — the two have to be
+# the same string, or petclinic and petclinic/backend would print one name in
+# two colours.
+locpath=${_repo_root:-$cwd}
+loc=$(basename "$locpath")
+unset _repo_file _repo_key _repo_root
 
 # --- Publish it, keyed by the terminal ----------------------------------------
 # Walkie Talkie draws the bound terminal's folder on its overlay chip and had no
@@ -2750,17 +2804,17 @@ FOLDER_CHIPS='25:231 61:231 91:231 126:231 28:231 30:231 100:231 130:231 19:231 
 # holding an index that may now point past the end of a shorter palette.
 _chip_file="$HOME/.claude/cwd/.chip-$PPID"
 _chip_sum=''
-_chip_cwd=''
-[ -r "$_chip_file" ] && read -r _chip_sum _chip_cwd < "$_chip_file" 2>/dev/null
-if [ "$_chip_cwd" != "$cwd" ]; then
+_chip_key=''
+[ -r "$_chip_file" ] && read -r _chip_sum _chip_key < "$_chip_file" 2>/dev/null
+if [ "$_chip_key" != "$locpath" ]; then
   # cksum, not shasum: the hash only has to spread paths over the palette, and
-  # it is the cheaper fork. The sum is written FIRST so that `read sum cwd`
+  # it is the cheaper fork. The sum is written FIRST so that `read sum path`
   # reassembles a path containing spaces (~/Library/Application Support/…) out
   # of the tail field.
-  _chip_sum=$(printf '%s' "$cwd" | cksum 2>/dev/null | cut -d' ' -f1)
+  _chip_sum=$(printf '%s' "$locpath" | cksum 2>/dev/null | cut -d' ' -f1)
   case "$_chip_sum" in ''|*[!0-9]*) _chip_sum=0 ;; esac
   { mkdir -p "$HOME/.claude/cwd" \
-      && printf '%s %s\n' "$_chip_sum" "$cwd" > "$_chip_file"; } 2>/dev/null || :
+      && printf '%s %s\n' "$_chip_sum" "$locpath" > "$_chip_file"; } 2>/dev/null || :
 fi
 _chip_n=0
 for _pair in $FOLDER_CHIPS; do _chip_n=$(( _chip_n + 1 )); done
