@@ -2708,10 +2708,83 @@ fi
 # trains the eye to skip the field.
 branch=$(git -C "$cwd" branch --show-current 2>/dev/null)
 case "$branch" in
-  ''|master|main) ;;
-  *) loc="${loc}@${branch}" ;;
+  ''|master|main) branch_sfx= ;;
+  *) branch_sfx="@${branch}" ;;
 esac
-[ -n "$loc" ] && out="$out | ${TEAL}${loc}${RESET}"
+
+# --- The folder chip: a background colour hashed from the folder's path ------
+# Same folder, same chip, in every window and after every restart. It is a
+# landmark to jump to, not an identifier: with ~20 active folders some pairs
+# necessarily share a chip, and the name is right there for when you must be
+# sure.
+#
+# TWENTY combinations, not twelve, and half of them INVERTED — dark text on a
+# pale background alongside white text on a dark one. Sticking to dark
+# backgrounds capped the palette at about a dozen hues that were still legible
+# and still distinguishable from each other; opening up the pale half roughly
+# doubles the range, and the light/dark split itself is the fastest thing the
+# eye sorts on, before it has resolved any hue at all. It also stops the chip
+# from disappearing into the window: these sessions run on Nord polar night
+# (#2e3440), which is why the palette carries no mid-grey — 238 (#444444) was
+# in the first draft and sank straight into that background; 88 (#870000) took
+# its slot.
+#
+# 256-colour and not 24-bit: Apple Terminal, where this bar spends its life, has
+# no truecolor, and a `48;2;r;g;b` chip degrades there to no chip at all.
+#
+# Each entry is background:foreground.
+FOLDER_CHIPS='25:231 61:231 91:231 126:231 28:231 30:231 100:231 130:231 19:231 88:231 223:16 194:16 189:16 224:16 230:16 195:16 217:16 186:16 183:16 252:16'
+
+# The hash costs a fork and this bar re-renders every second in every open
+# session — the exact shape of load that once made the whole machine feel slow.
+# So it is computed only when the directory actually CHANGES, cached in
+# ~/.claude/cwd/.chip-$PPID; the steady state is one builtin `read` and no
+# subprocess. $PPID is claude's own pid: free, stable for the life of the
+# session, and per-session, so two windows in different folders cannot
+# invalidate each other's answer every render. Same key, same reasoning, as the
+# cwd publisher above.
+#
+# What is cached is the RAW checksum, not the palette index. Taking the modulo
+# at render time costs nothing (shell arithmetic, no fork) and means editing
+# FOLDER_CHIPS takes effect immediately, instead of leaving every session
+# holding an index that may now point past the end of a shorter palette.
+_chip_file="$HOME/.claude/cwd/.chip-$PPID"
+_chip_sum=''
+_chip_cwd=''
+[ -r "$_chip_file" ] && read -r _chip_sum _chip_cwd < "$_chip_file" 2>/dev/null
+if [ "$_chip_cwd" != "$cwd" ]; then
+  # cksum, not shasum: the hash only has to spread paths over the palette, and
+  # it is the cheaper fork. The sum is written FIRST so that `read sum cwd`
+  # reassembles a path containing spaces (~/Library/Application Support/…) out
+  # of the tail field.
+  _chip_sum=$(printf '%s' "$cwd" | cksum 2>/dev/null | cut -d' ' -f1)
+  case "$_chip_sum" in ''|*[!0-9]*) _chip_sum=0 ;; esac
+  { mkdir -p "$HOME/.claude/cwd" \
+      && printf '%s %s\n' "$_chip_sum" "$cwd" > "$_chip_file"; } 2>/dev/null || :
+fi
+_chip_n=0
+for _pair in $FOLDER_CHIPS; do _chip_n=$(( _chip_n + 1 )); done
+_chip=''
+if [ "$_chip_n" -gt 0 ]; then
+  _chip_idx=$(( ${_chip_sum:-0} % _chip_n ))
+  _i=0
+  for _pair in $FOLDER_CHIPS; do
+    if [ "$_i" -eq "$_chip_idx" ]; then
+      _chip="${ESC}[48;5;${_pair%:*}m${ESC}[38;5;${_pair#*:}m"
+      break
+    fi
+    _i=$(( _i + 1 ))
+  done
+fi
+# Anything unexpected above leaves the folder readable in the old teal rather
+# than unpainted: the chip is a convenience, never a reason for a blank segment.
+[ -n "$_chip" ] || _chip="$TEAL"
+
+# The branch stays TEAL and OUTSIDE the chip. The chip frames "which folder",
+# and a branch name is not part of that — putting it inside would make the same
+# folder look like a different block depending on where its HEAD is.
+[ -n "$branch_sfx" ] && branch_sfx="${TEAL}${branch_sfx}${RESET}"
+[ -n "$loc" ] && out="$out | ${_chip}${loc}${RESET}${branch_sfx}"
 
 # --- Weekly quota, last cell (built above, next to its arithmetic) ----------
 [ -n "$week_seg" ] && out="$out | $week_seg"

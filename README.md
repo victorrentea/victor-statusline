@@ -15,6 +15,30 @@ Opus 4.8/xhigh 50K/1M | ↗98% left / 4:47 | ✻0.5 ⊂ $25 | +24% = 70% / 1d1h
 🤖 opus-4.8 · high · 55K/1M | 6759 AIC (96%)↗ left | resets in 7d 4h
 ```
 
+## What the bar actually says
+
+Three annotated shots, one per situation. Every figure in them is synthetic —
+they are rendered from the real scripts fed hand-written payloads, so nothing
+here is anyone's actual quota or spend (`docs/screenshots/`).
+
+**Claude Code on a Pro/Max subscription** — the full five segments:
+
+![Claude Code status line on a subscription, with every field annotated](docs/screenshots/claude-subscription.png)
+
+**Claude Code on an API key** — the same script and the same session. Claude Code
+builds the payload as `...(five_hour || seven_day || spend_limit) && {rate_limits}`,
+over a field its own schema documents as *"False when plan rate limits do not
+apply (API key, Bedrock, Vertex, or missing profile scope) — rate_limits will be
+null"*. So on an API key the key is absent, not zero, and the two quota segments
+are not drawn at all — the bar is what remains:
+
+![Claude Code status line on an API key, with every field annotated](docs/screenshots/claude-apikey.png)
+
+**GitHub Copilot CLI** — a different script, deliberately the same idioms: pace
+first, absolutes in brackets, working-day clocks:
+
+![GitHub Copilot CLI status line, with every field annotated](docs/screenshots/copilot.png)
+
 ## What's here
 
 | Path | What it is |
@@ -24,6 +48,7 @@ Opus 4.8/xhigh 50K/1M | ↗98% left / 4:47 | ✻0.5 ⊂ $25 | +24% = 70% / 1d1h
 | [`copilot/victor-copilot-statusline.md`](copilot/victor-copilot-statusline.md) | **GitHub Copilot CLI** status line — full reference |
 | `copilot/statusline.sh`, `copilot/quota-refresh.sh` | the scripts it documents |
 | `check-sync.sh` | verifies each doc's embedded copy still matches the real script |
+| `docs/screenshots/` | the annotated pictures above, plus the two scripts that regenerate them |
 
 Each doc **embeds a verbatim copy** of its scripts, so a single markdown file is
 enough to hand to someone — or to paste at an agent and say "set this up for me".
@@ -92,3 +117,16 @@ then add the `statusLine` block from `copilot/victor-copilot-statusline.md`
 The scripts and their docs are **one unit**: a behaviour change must update the
 script, the prose, and the embedded copy in the same commit. Run `./check-sync.sh`
 before pushing.
+
+The screenshots are generated, not captured, so they cannot go stale silently —
+but they do have to be re-run when a segment changes shape:
+
+```sh
+./docs/screenshots/make-lines.sh      # sample payloads -> docs/screenshots/lines/*.ansi
+python3 docs/screenshots/render.py    # *.ansi + the field notes -> *.png
+```
+
+`render.py` locates each annotated field by a **regex**, not by its literal
+value, and dies loudly if one stops matching or two start overlapping — so a
+renamed or reshaped segment fails the render instead of quietly mislabelling the
+picture.
