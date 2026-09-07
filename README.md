@@ -17,13 +17,29 @@ Opus 4.8/xhigh 50K/1M | ↗98% left / 4:47 | ✻0.5 ⊂ $25 | +24% = 70% / 1d1h
 
 ## What the bar actually says
 
-Three annotated shots, one per situation. Every figure in them is synthetic —
+Five annotated shots, one per situation. Every figure in them is synthetic —
 they are rendered from the real scripts fed hand-written payloads, so nothing
 here is anyone's actual quota or spend (`docs/screenshots/`).
 
 **Claude Code on a Pro/Max subscription** — the full five segments:
 
 ![Claude Code status line on a subscription, with every field annotated](docs/screenshots/claude-subscription.png)
+
+**The part that pays for itself** — the prompt-cache clock. Cached input bills
+at 0.1×, rebuilding a prefix at 1.25× (5-minute cache) or 2.0× (1-hour), so
+walking away for an hour with 300 K of Opus context loaded costs about three
+dollars the moment you type again — and nothing on screen would otherwise say
+so, because the turn just looks expensive. Four moments of one session: warm,
+about to expire (the loss **priced before it happens**), expired, and the
+post-mortem on a turn that already paid it:
+
+![The prompt-cache clock in four states, annotated](docs/screenshots/claude-prompt-cache.png)
+
+**A fan-out in flight** — the one chip that is not always there. Claude Code's
+own agent list never says *which model* each subagent got, and that is what
+decides whether a 24-way fan-out costs cents or tens of dollars:
+
+![The subagent chip, annotated](docs/screenshots/claude-subagents.png)
 
 **Claude Code on an API key** — the same script and the same session. Claude Code
 builds the payload as `...(five_hour || seven_day || spend_limit) && {rate_limits}`,

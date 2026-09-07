@@ -24,8 +24,8 @@ LINES = HERE / "lines"
 # --- palette ---------------------------------------------------------------
 # The status lines address colour as xterm-256 indices; Chrome needs hex.
 BASE16 = [
-    "#000000", "#cc0000", "#4e9a06", "#c4a000", "#3465a4", "#75507b", "#06989a", "#d3d7cf",
-    "#555753", "#ef2929", "#8ae234", "#fce94f", "#729fcf", "#ad7fa8", "#34e2e2", "#eeeeec",
+    "#000000", "#cd3131", "#0dbc79", "#e5e510", "#2472c8", "#bc3fbc", "#11a8cd", "#e5e5e5",
+    "#666666", "#f14c4c", "#23d18b", "#f5f543", "#3b8eea", "#d670d6", "#29b8db", "#ffffff",
 ]
 
 
@@ -55,6 +55,18 @@ def parse_ansi(raw):
             c = codes[j]
             if c == "0":
                 fg = bg = None
+            elif c == "39":
+                fg = None
+            elif c == "49":
+                bg = None
+            elif c.isdigit() and 30 <= int(c) <= 37:
+                fg = BASE16[int(c) - 30]
+            elif c.isdigit() and 90 <= int(c) <= 97:
+                fg = BASE16[int(c) - 90 + 8]
+            elif c.isdigit() and 40 <= int(c) <= 47:
+                bg = BASE16[int(c) - 40]
+            elif c.isdigit() and 100 <= int(c) <= 107:
+                bg = BASE16[int(c) - 100 + 8]
             elif c == "38" and codes[j + 1:j + 2] == ["5"]:
                 fg = xterm(int(codes[j + 2])); j += 2
             elif c == "48" and codes[j + 1:j + 2] == ["5"]:
@@ -151,6 +163,126 @@ SPECS = [
         fields=CLAUDE_MODEL + CLAUDE_SPEND + CLAUDE_LOC,
     ),
     dict(
+        src="claude-subagents", out="claude-subagents.png",
+        title="Claude Code — a fan-out in flight",
+        subtitle="The same bar again, with one chip that is only there while "
+                 "subagents are running. It is glued onto the model segment because "
+                 "that is where its defaults come from.",
+        note="Claude Code's own agent list under the bar names the agents and shows "
+             "their progress, but never says <b>which model</b> any of them got — and "
+             "that is the fact that decides what a fan-out costs. The same "
+             "<code>Task</code> lands on Opus, Sonnet, Fable or Haiku depending on the "
+             "agent's frontmatter, a <code>model</code> override at the call site, or "
+             "the configured default; none of the three is visible anywhere on screen. "
+             "A 24-way fan-out on Fable and one on Opus look identical while they run "
+             "and differ by an order of magnitude on the bill.",
+        fields=[
+            (r"Opus 5xh", "model",
+             "the <b>session's</b> model and effort — and the fallback for the chip "
+             "beside it: an agent inherits this session's effort level unless its own "
+             "definition overrides it, which is what the bar shows for the seconds "
+             "between a spawn and that agent's first completed response."),
+            (r"\+\{[^}]*\}", "spend",
+             "the fan-out, <b>grouped rather than listed</b>: each entry is "
+             "<code>&lt;model&gt;&lt;effort&gt;</code> with <code>*N</code> when a group "
+             "has more than one, biggest group first. Here: two Opus 5 at high effort "
+             "and one Sonnet 5 at medium. Haiku, which has no reasoning-effort setting "
+             "at all, renders bare (<code>H4.5</code>) rather than inventing a letter. "
+             "One line per agent would be a roster; the bar has room for the "
+             "<i>shape</i> of the fan-out, which is the part you act on — "
+             "<code>+{F5.1h*21,O5h*3}</code> says “mostly Fable, three Opus stragglers” "
+             "in twelve columns. The chip disappears the moment the last agent is "
+             "collected."),
+        ],
+    ),
+    dict(
+        out="claude-prompt-cache.png",
+        title="Claude Code — the prompt cache, and the money it quietly costs",
+        subtitle="Cached input is billed at <b>0.1×</b>; rebuilding a prefix costs "
+                 "<b>1.25×</b> on a 5-minute cache and <b>2.0×</b> on a 1-hour one. "
+                 "Re-sending a 300K-token Opus prefix is therefore about three dollars "
+                 "of pure waste — and it is <i>completely invisible</i> in the price, "
+                 "because the turn simply looks expensive today. These four rows are "
+                 "one session at four moments.",
+        note="The two signals are <b>complements, not duplicates</b>: the orange clock "
+             "is a <i>forecast</i> — you are about to lose it — and the red "
+             "<code>(N⏱)</code> is a <i>post-mortem</i> — you just did. Note also "
+             "which one is louder. The price is <b>stated</b> for every expired cache, "
+             "however small, because it answers a question you may be asking on "
+             "purpose; only a loss over $2 <b>blinks</b>, because a bar that interrupts "
+             "you over forty cents stops being read at all.",
+        rows=[
+            dict(src="cache-warm",
+                 caption="<b>warm</b>· 12 min into a 1-hour cache",
+                 fields=[
+                     (r"300K/1M", "model",
+                      "the live context, blue: all of this is sitting in the cache, and "
+                      "every turn reads it back at <b>0.1×</b> the input price."),
+                     (r"-\d+m(?= ⊂)", "spend",
+                      "how long since the last response. Plain text — twelve minutes "
+                      "into a one-hour cache there is nothing at stake, and a bar that "
+                      "warns you when nothing is at stake trains you to stop looking."),
+                 ]),
+            dict(src="cache-expiring",
+                 caption="<b>expiring</b>· 52 min in — past 0.8 × TTL",
+                 fields=[
+                     (r"300K/1M", "model",
+                      "the same counter, now orange. It and the clock share <b>one "
+                      "predicate</b> (<code>cache_phase()</code>), so the two halves of "
+                      "the bar can never disagree about what state the cache is in."),
+                     (r"-\d+m <= 1h", "spend",
+                      "last chance: send now and you still pay 0.1×. The clock prints "
+                      "the <b>comparison</b>, not just the age — <code>-52m</code> alone "
+                      "is a number with no conclusion attached, and you would have to "
+                      "remember the TTL to draw one. The TTL is <b>read, not assumed</b>: "
+                      "the API says which ephemeral bucket each cache write landed in, "
+                      "so the session states its own."),
+                     (r"\(miss=\$[\d.]+\)", "spend",
+                      "<b>the loss, priced before it happens</b> — the whole live "
+                      "context re-written at the cache-<b>write</b> price instead of "
+                      "read at the cache-<b>read</b> price. That spread is 1.15× base "
+                      "input on a 5-minute cache and <b>1.9× on a 1-hour</b> one, so "
+                      "300K of Opus context is $1.7 to lose at five minutes and $2.9 at "
+                      "an hour — the longer TTL is the safer setting right up until you "
+                      "blow past it. Naming the price <i>while the prefix is still "
+                      "alive</i> is the entire point of this phase: a deadline you "
+                      "cannot price is one you cannot decide about."),
+                 ]),
+            dict(src="cache-expired",
+                 caption="<b>expired</b>· past the hour",
+                 fields=[
+                     (r">1h", "spend",
+                      "the prefix is gone; your next message rebuilds it at the write "
+                      "price. Past an hour the exact age stops meaning anything — 2h, "
+                      "16h and 3d are all “from scratch” — so it collapses to "
+                      "<code>&gt;1h</code>, and the <code>&gt; 1h</code> comparison is "
+                      "dropped with it: <code>&gt;1h &gt; 1h</code> is noise. Above $2, "
+                      "as here, the red blinks one second on, one second off."),
+                 ]),
+            dict(src="cache-miss",
+                 caption="<b>the post-mortem</b>· a turn that already paid",
+                 fields=[
+                     (r"✻[\d.]+(?=\()", "spend",
+                      "the turn price, with the flower standing in for the <code>$</code> "
+                      "because the turn is still running. <b>The red stops at the "
+                      "parenthesis</b>: this is what the turn cost, and colouring "
+                      "through it would paint the whole turn as the alarm when the alarm "
+                      "is only the part inside."),
+                     (r"\([\d.]+⏱\)", "spend",
+                      "of this turn's $5.20, <b>$2.70 was the rebuilt prefix</b>. Glued "
+                      "on with no space, because a parenthetical touching its number is "
+                      "a qualifier <i>of</i> it — the $2.70 is inside the $5.20, which "
+                      "is in turn inside the session's $35. The stopwatch names the "
+                      "<b>cause</b>, not the severity: what kills a prompt cache is a "
+                      "clock running out, and it is the same clock the row above was "
+                      "counting. The verdict is deterministic, off the API's own "
+                      "numbers — a miss is a prefix of ≥5000 tokens whose first request "
+                      "this turn read back less than half; on real transcripts genuine "
+                      "misses read back 0–7% and healthy turns 80–100%."),
+                 ]),
+        ],
+    ),
+    dict(
         src="copilot", out="copilot.png",
         title="GitHub Copilot CLI",
         subtitle="Three segments: which brain and how full, what today has cost, and "
@@ -194,12 +326,16 @@ SPECS = [
 CSS = """
 * { box-sizing: border-box; }
 body { margin: 0; background: #ffffff; }
-.card { width: 1500px; padding: 34px 40px 34px; background: #0d1117; color: #c9d1d9;
+.card { width: 1560px; padding: 34px 40px 34px; background: #0d1117; color: #c9d1d9;
         font-family: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif; }
 h1 { font-size: 25px; margin: 0 0 6px; color: #f0f6fc; font-weight: 600; letter-spacing: -.01em; }
 .sub { font-size: 16px; line-height: 1.5; margin: 0; color: #8b949e; max-width: 1180px; }
 .term { margin: 46px 0 10px; padding: 18px 22px; background: #010409;
         border: 1px solid #21262d; border-radius: 8px; overflow: visible; }
+.row + .row { margin-top: 30px; }
+.cap { font-size: 13.5px; line-height: 1.4; color: #6e7681; margin: 0 0 25px;
+       font-family: -apple-system, sans-serif; }
+.cap b { color: #d7dde5; font-weight: 600; font-size: 14.5px; margin-right: 7px; }
 .line { font-family: "SF Mono", Menlo, monospace; font-size: 20px; line-height: 1.5;
         white-space: pre; color: #c9d1d9; }
 .fld { position: relative; border-radius: 3px; padding: 3px 1px;
@@ -231,70 +367,87 @@ ol.legend li b { color: #e6edf3; font-weight: 600; }
 
 
 def build(spec):
-    raw = (LINES / f"{spec['src']}.ansi").read_text()
-    cells = parse_ansi(raw)
-    plain = "".join(c[0] for c in cells)
+    """One figure. A spec is either a single line (`src` + `fields`) or several
+    stacked `rows`, each its own .ansi with its own caption and fields — which
+    is what a story about STATE CHANGE needs: the cache clock only means
+    anything as four moments of one session, side by side."""
+    rows = spec.get("rows") or [{"src": spec["src"], "fields": spec["fields"]}]
+    n = 0
+    row_html, legend_items = [], []
 
-    # Locate every annotated field, then check the marks do not overlap: a bad
-    # regex silently swallowing a neighbour is the one failure mode that would
-    # produce a wrong-but-plausible picture.
-    marks = []
-    for idx, (pat, group, desc) in enumerate(spec["fields"], 1):
-        m = re.search(pat, plain)
-        if not m:
-            sys.exit(f"{spec['src']}: no match for /{pat}/ in {plain!r}")
-        marks.append([m.start(), m.end(), idx, GROUPS[group], desc, m.group(0)])
-    marks.sort()
-    for a, b in zip(marks, marks[1:]):
-        if a[1] > b[0]:
-            sys.exit(f"{spec['src']}: fields {a[2]} and {b[2]} overlap")
+    for row in rows:
+        raw = (LINES / f"{row['src']}.ansi").read_text()
+        cells = parse_ansi(raw)
+        plain = "".join(c[0] for c in cells)
 
-    # Render the cells, opening a field wrapper at its start index and closing
-    # it at its end, and coalescing runs of identical colour inside.
-    starts = {m[0]: m for m in marks}
-    ends = {m[1] for m in marks}
-    out, cur = [], None
+        # Locate every annotated field, then check the marks do not overlap: a
+        # bad regex silently swallowing a neighbour is the one failure mode
+        # that would produce a wrong-but-plausible picture.
+        marks = []
+        for pat, group, desc in row["fields"]:
+            m = re.search(pat, plain)
+            if not m:
+                sys.exit(f"{row['src']}: no match for /{pat}/ in {plain!r}")
+            n += 1
+            marks.append([m.start(), m.end(), n, GROUPS[group], desc, m.group(0)])
+        marks.sort()
+        for a, b in zip(marks, marks[1:]):
+            if a[1] > b[0]:
+                sys.exit(f"{row['src']}: fields {a[2]} and {b[2]} overlap")
 
-    def flush():
-        nonlocal cur
-        if cur:
-            style = "".join(f"{k}:{v};" for k, v in cur[0].items())
-            out.append(f'<span style="{style}">{html.escape(cur[1])}</span>'
-                       if style else html.escape(cur[1]))
-            cur = None
+        # Render the cells, opening a field wrapper at its start index and
+        # closing it at its end, coalescing runs of identical colour inside.
+        starts = {m[0]: m for m in marks}
+        ends = {m[1] for m in marks}
+        out, cur = [], None
 
-    for i, (ch, fg, bg) in enumerate(cells):
-        if i in ends:
-            flush(); out.append("</span>")
-        if i in starts:
-            flush()
-            _, _, n, colour, _, _ = starts[i]
-            out.append(f'<span class="fld" style="--c:{colour}">'
-                       f'<i class="badge">{n}</i>')
-        key = {}
-        if fg: key["color"] = fg
-        if bg: key["background"] = bg
-        if cur and cur[0] == key:
-            cur = (key, cur[1] + ch)
-        else:
-            flush(); cur = (key, ch)
-    flush()
-    if len(cells) in ends:
-        out.append("</span>")
+        def flush():
+            nonlocal cur
+            if cur:
+                style = "".join(f"{k}:{v};" for k, v in cur[0].items())
+                out.append(f'<span style="{style}">{html.escape(cur[1])}</span>'
+                           if style else html.escape(cur[1]))
+                cur = None
+
+        for idx, (ch, fg, bg) in enumerate(cells):
+            if idx in ends:
+                flush(); out.append("</span>")
+            if idx in starts:
+                flush()
+                _, _, num, colour, _, _ = starts[idx]
+                out.append(f'<span class="fld" style="--c:{colour}">'
+                           f'<i class="badge">{num}</i>')
+            key = {}
+            if fg: key["color"] = fg
+            if bg: key["background"] = bg
+            if cur and cur[0] == key:
+                cur = (key, cur[1] + ch)
+            else:
+                flush(); cur = (key, ch)
+        flush()
+        if len(cells) in ends:
+            out.append("</span>")
+
+        cap = (f'<div class="cap">{row["caption"]}</div>'
+               if row.get("caption") else "")
+        row_html.append(f'<div class="row">{cap}'
+                        f'<div class="line">{"".join(out)}</div></div>')
+        legend_items += sorted(marks, key=lambda m: m[2])
 
     legend = "".join(
-        f'<li style="--c:{c}"><span class="n">{n}</span>'
+        f'<li style="--c:{c}"><span class="n">{num}</span>'
         f'<span class="k">{html.escape(txt)}</span> — {desc}</li>'
-        for _, _, n, c, desc, txt in sorted(marks, key=lambda m: m[2])
+        for _, _, num, c, desc, txt in legend_items
     )
     note = f'<p class="note">{spec["note"]}</p>' if spec.get("note") else ""
+    cols = ' style="columns:1"' if spec.get("one_column") else ""
     return f"""<!doctype html><meta charset="utf-8"><style>{CSS}</style>
 <div class="card">
   <h1>{spec['title']}</h1>
   <p class="sub">{spec['subtitle']}</p>
-  <div class="term"><div class="line">{''.join(out)}</div></div>
+  <div class="term">{''.join(row_html)}</div>
   {note}
-  <ol class="legend">{legend}</ol>
+  <ol class="legend"{cols}>{legend}</ol>
   <p class="foot">github.com/victorrentea/victor-statusline — figures are synthetic;
      regenerate with docs/screenshots/make-lines.sh + render.py</p>
 </div>"""
@@ -304,7 +457,7 @@ def main():
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.launch(channel="chrome")
-        page = browser.new_page(viewport={"width": 1500, "height": 900},
+        page = browser.new_page(viewport={"width": 1560, "height": 900},
                                 device_scale_factor=2)
         for spec in SPECS:
             page.set_content(build(spec))
