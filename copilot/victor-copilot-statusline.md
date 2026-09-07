@@ -26,6 +26,13 @@ Every credit figure carries its **list-price dollar equivalent** at 100 AIC = \$
 is the one both a daily burn rate and a monthly balance can be judged in without
 mental arithmetic. The `≈` marks it as a fixed conversion, not an invoice.
 
+The finished line is **cut to the terminal width with a `…`**. Copilot CLI redraws
+the status line in place, so one column too many wraps it onto a second row that
+the TUI never repaints away. The width comes from `stty size </dev/tty` (our
+stdout is captured, so `$COLUMNS` and `tput cols` are both blind), and columns are
+counted printable — colour escapes are zero-width, the emoji is two. Override with
+`COPILOT_STATUSLINE_COLS`; an unknown width disables the trim rather than guessing.
+
 ---
 
 ## TL;DR — let your Copilot CLI configure itself
@@ -95,6 +102,11 @@ The relevant snapshot is `quota_snapshots.premium_interactions`
 #     in without doing arithmetic in your head. "≈" not "=" because the rate is
 #     a fixed conversion, not an invoice.
 #
+#   • width: the finished line is cut to the terminal width with a "…" when it
+#     would not fit. Copilot CLI redraws the status line in place, so a single
+#     column too many makes the terminal wrap it onto a second row — which the
+#     TUI then leaves behind as a stray leftover line instead of repainting it.
+#
 # Copilot CLI pipes the session status as JSON on stdin; we print one line to
 # stdout. The monthly AI-Credit balance and reset date are NOT in that payload,
 # so they come from a small cache refreshed in the background by quota-refresh.sh
@@ -104,6 +116,16 @@ CACHE="$HOME/.copilot/quota-cache.json"
 TTL=60    # refresh the quota cache at most once per minute (keeps AIC current)
 
 INPUT="$(cat 2>/dev/null)"
+
+# --- terminal width, for trimming the line to one row ----------------------
+# Copilot CLI captures our stdout, so $COLUMNS is not exported to us and
+# `tput cols` has no terminal to interrogate. The controlling terminal is still
+# reachable as /dev/tty, and `stty size` reads its size straight off the ioctl.
+# 0 means "unknown" downstream, which disables trimming rather than guessing.
+COLS="${COPILOT_STATUSLINE_COLS:-}"
+[ -z "$COLS" ] && COLS="$(stty size </dev/tty 2>/dev/null | awk '{print $2}')"
+[ -z "$COLS" ] && COLS="$(tput cols 2>/dev/null)"
+case "$COLS" in ''|*[!0-9]*) COLS=0 ;; esac
 
 # --- refresh the monthly-quota cache in the background when stale (non-blocking) --
 now=$(date +%s 2>/dev/null || echo 0)
@@ -115,11 +137,15 @@ if [ "$(( now - cmtime ))" -ge "$TTL" ] && [ "$(( now - lmtime ))" -ge "$TTL" ];
   [ -f "$DIR/quota-refresh.sh" ] && nohup bash "$DIR/quota-refresh.sh" "$CACHE" >/dev/null 2>&1 &
 fi
 
-python3 - "$INPUT" "$CACHE" <<'PY'
+python3 - "$INPUT" "$CACHE" "$COLS" <<'PY'
 import sys, json
 
 raw   = sys.argv[1] if len(sys.argv) > 1 else ""
 cache = sys.argv[2] if len(sys.argv) > 2 else ""
+try:
+    cols = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+except ValueError:
+    cols = 0
 try:
     d = json.loads(raw) if raw.strip() else {}
 except Exception:
@@ -340,7 +366,39 @@ if isinstance(snap, dict):
 elif time_left:
     parts.append(f"resets in {time_left}")
 
-print(" | ".join(parts))
+# --- fit to one row --------------------------------------------------------
+# Width has to be counted in PRINTABLE columns, which is neither len() nor the
+# byte count: the colour escapes take zero columns and the emoji takes two. What
+# overflows is cut and replaced by a single "…", so the line always ends in the
+# marker that says "there was more" rather than mid-number.
+import re, unicodedata
+
+ANSI = re.compile(r"\033\[[0-9;]*m")
+
+def cw(ch):
+    """Columns one character occupies in a terminal."""
+    if unicodedata.combining(ch):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+
+def fit(s, cols):
+    if cols <= 0:                      # width unknown: never risk cutting
+        return s
+    budget = cols - 1                  # never touch the last column: a glyph
+                                       # landing there wraps on some terminals
+    if sum(cw(c) for c in ANSI.sub("", s)) <= budget:
+        return s
+    keep, w, limit, i = [], 0, budget - 1, 0   # -1 leaves room for the "…"
+    while i < len(s):
+        m = ANSI.match(s, i)
+        if m:                          # escapes cost nothing, copy them through
+            keep.append(m.group()); i = m.end(); continue
+        if w + cw(s[i]) > limit:
+            break
+        keep.append(s[i]); w += cw(s[i]); i += 1
+    return "".join(keep) + "…" + CLR_RESET   # reset: the cut may drop one
+
+print(fit(" | ".join(parts), cols))
 PY
 ```
 
