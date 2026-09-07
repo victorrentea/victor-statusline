@@ -1076,7 +1076,7 @@ next month.
 background alongside white text on a dark one:
 
 ```
-dark bg, white text   25  61  91  126  28  30  100  130  19  238
+dark bg, white text   25  61  91  126  28  30  100  130  19  88
 pale bg, black text   223 194 189 224  230 195 217  186  183 252
 ```
 
@@ -1088,7 +1088,9 @@ other — and twelve buckets over ~20 active folders collided constantly
 orange). Opening up the pale half roughly doubles the range, and the light/dark
 split is the fastest thing the eye sorts on — it lands before any hue has been
 resolved. It also keeps the chip from sinking into the window: these sessions run
-on a dark wine background, where one more dark-red chip would be invisible.
+on Nord polar night (`#2e3440`), which is why the palette carries no mid-grey —
+238 (`#444444`) was in the first draft and vanished straight into that
+background, so 88 (`#870000`) took its slot.
 
 It is still a **landmark, not an identifier**. Twenty buckets over twenty
 folders still collide; the chip is what fires before you read, and the name is

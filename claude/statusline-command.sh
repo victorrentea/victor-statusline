@@ -1312,14 +1312,16 @@ esac
 # and still distinguishable from each other; opening up the pale half roughly
 # doubles the range, and the light/dark split itself is the fastest thing the
 # eye sorts on, before it has resolved any hue at all. It also stops the chip
-# from disappearing into the window: these sessions run on a dark wine
-# background, where another dark-red chip would be invisible.
+# from disappearing into the window: these sessions run on Nord polar night
+# (#2e3440), which is why the palette carries no mid-grey — 238 (#444444) was
+# in the first draft and sank straight into that background; 88 (#870000) took
+# its slot.
 #
 # 256-colour and not 24-bit: Apple Terminal, where this bar spends its life, has
 # no truecolor, and a `48;2;r;g;b` chip degrades there to no chip at all.
 #
 # Each entry is background:foreground.
-FOLDER_CHIPS='25:231 61:231 91:231 126:231 28:231 30:231 100:231 130:231 19:231 238:231 223:16 194:16 189:16 224:16 230:16 195:16 217:16 186:16 183:16 252:16'
+FOLDER_CHIPS='25:231 61:231 91:231 126:231 28:231 30:231 100:231 130:231 19:231 88:231 223:16 194:16 189:16 224:16 230:16 195:16 217:16 186:16 183:16 252:16'
 
 # The hash costs a fork and this bar re-renders every second in every open
 # session — the exact shape of load that once made the whole machine feel slow.
