@@ -1034,11 +1034,11 @@ timeouts remain, although an individual weekly sleep is now only about an hour.
 ## 5. Location — `ai@fix-cache`
 
 Second-to-last segment: the **folder**, plus `@branch` when the branch is not the
-trunk. The folder name sits on a **colour chip** — a background colour derived
-from a hash of its path, so one project always looks the same and no two look
-alike by accident (see below). The `@branch` stays **teal** (256-colour 80,
-`#5fd7d7`) and outside the chip — the closest match to the border Claude Code
-draws around the prompt, so that half still reads as part of the same frame.
+trunk. The folder name sits on a **colour chip** — a background hashed from its
+path, one of twenty combinations, so a folder always looks the same (see
+below). The `@branch` stays **teal** (256-colour 80, `#5fd7d7`) and outside
+the chip — the closest match to the border Claude Code draws around the
+prompt, so that half still reads as part of the same frame.
 
 | cwd | Segment |
 |-----|---------|
@@ -1065,63 +1065,58 @@ draws around the prompt, so that half still reads as part of the same frame.
 > title; that hook has since been removed precisely so the title could go back to
 > holding Claude Code's own per-session summaries (§6).
 
-### The folder chip — the colour is the hash of the path
+### The folder chip — twenty combinations, hashed from the path
 
-The folder name is painted **on** a background colour picked from a hash of its
-full path. Same folder, same colour, in every window and after every restart;
-`petclinic` is the same blue in the session you opened this morning and in the
-one you open next month.
+The folder name sits on a background colour picked from a hash of its full path.
+Same folder, same chip, in every window and after every restart: `petclinic` is
+the same chip in the session you opened this morning and in the one you open
+next month.
 
-This is the second home for an idea that used to live somewhere much louder. A
-sibling hook (`session-color.sh`) tinted the **whole Terminal tab** by folder —
-same purpose, know which project a window belongs to without reading a word —
-but a full-window wash is distracting to work in, and it fought everything else
-that wanted to touch a tab's background: a profile swap silently dropped the
-tint, so the hook needed a `reapply` path, a per-tab watcher to survive
-light/dark flips, and a `restore` at session end that was regularly missed. All
-of that is retired. The signal survives in eight characters of status line, with
-no AppleScript, no watcher process, and nothing to restore.
-
-**Twelve hues, one every 30° around the wheel**, all dark enough that white text
-sits on them at readable contrast:
+**Twenty combinations, and half of them inverted** — dark text on a pale
+background alongside white text on a dark one:
 
 ```
-124  130  100  64  28  29  30  25  19  61  91  126
-red  org  olv  chr grn eme tea stl blu ind vio mag
+dark bg, white text   25  61  91  126  28  30  100  130  19  238
+pale bg, black text   223 194 189 224  230 195 217  186  183 252
 ```
 
-The chip carries its **own foreground** (231, white) instead of inheriting the
-bar's. That is the point of a chip: this line is read on a white IntelliJ
-terminal as often as on a black one, and the folder is now the one segment that
-does not have to care which — it brings its own background with it.
+Sticking to dark backgrounds, as the first version did, capped the palette at
+about a dozen hues that were both legible and still distinguishable from each
+other — and twelve buckets over ~20 active folders collided constantly
+(measured on the real folder list: 10 collisions at 12 hues; `walkie-talkie` and
+`victor-macos-addons`, the pair most often open side by side, landed on the same
+orange). Opening up the pale half roughly doubles the range, and the light/dark
+split is the fastest thing the eye sorts on — it lands before any hue has been
+resolved. It also keeps the chip from sinking into the window: these sessions run
+on a dark wine background, where one more dark-red chip would be invisible.
+
+It is still a **landmark, not an identifier**. Twenty buckets over twenty
+folders still collide; the chip is what fires before you read, and the name is
+right next to it for when you need to be sure.
 
 **256-colour, not 24-bit.** Apple Terminal, where this bar spends its life, has
-no truecolor: a `48;2;r;g;b` chip degrades there to no chip at all. The hues are
-cube colours so they survive.
-
-**Twelve buckets means collisions, and that is fine.** With ~20 folders in play
-some pairs share a colour. The chip is a *hint* that fires before you read —
-"not the window I meant" — not an identifier; the name is right there next to it
-for when you need to be sure.
+no truecolor: a `48;2;r;g;b` chip degrades there to no chip at all. Every value
+is a cube colour, so they survive.
 
 **The hash is computed only when you `cd`.** It costs a fork, and this bar
-re-renders every second in every open session — the exact shape of load that
-once made the whole machine feel slow. So the index is cached in
-`~/.claude/cwd/.chip-$PPID` and re-derived only when the directory actually
-changes; the steady state is one builtin `read` and no subprocess. The key is
-`$PPID` — claude's own pid, free, stable for the life of the session, and
-per-session, so two windows in different folders cannot invalidate each other's
-answer every render. Same reasoning, and the same key, as the cwd publisher
-below. The index is stored **first** in the file so that `read idx cwd`
-reassembles a path containing spaces (`~/Library/Application Support/…`) out of
-the tail field.
+re-renders every second in every open session — the exact shape of load that once
+made the whole machine feel slow. So it is cached in `~/.claude/cwd/.chip-$PPID`
+and re-derived only when the directory actually changes; steady state is one
+builtin `read` and no subprocess. The key is `$PPID` — claude's own pid: free,
+stable for the life of the session, and per-session, so two windows in different
+folders cannot invalidate each other's answer every render. Same key and same
+reasoning as the cwd publisher below.
 
-`cksum` and not `shasum`: the hash only has to spread paths over twelve buckets,
-and it is the cheaper fork.
+What is cached is the **raw checksum, not the palette index**. Taking the modulo
+at render time is shell arithmetic with no fork, and it means editing
+`FOLDER_CHIPS` takes effect immediately instead of leaving live sessions holding
+an index that now points past the end of a shorter palette.
 
-**The branch stays outside the chip**, in the old teal. The chip answers "which
-project"; a branch name is not part of that answer, and colouring it in would
-make one folder look like two different ones depending on where its HEAD is.
+`cksum` and not `shasum`: the hash only has to spread paths over the palette, and
+it is the cheaper fork.
+
+**The branch stays outside the chip**, in the old teal — colouring it in would
+make one folder look like a different block depending on where its HEAD is.
 
 ### …and it publishes what it found, for anything outside the process
 
