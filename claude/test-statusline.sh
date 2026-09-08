@@ -209,7 +209,7 @@ JSON
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
 assert_contains     "subagents: groups by model+effort, biggest first" "$out" "+{O5h*2,H4.5,S5m}"
 assert_not_contains "subagents: no effort letter is invented for Haiku" "$out" "H4.5h"
-assert_contains     "subagents: chip hangs off the model segment"      "$out" "/1M +{"
+assert_contains     "subagents: chip hangs off the model segment"      "$out" "60K +{"
 assert_not_contains "subagents: a returned Task is gone"               "$out" "*3"
 assert_not_contains "subagents: a notified async agent is gone"        "$out" "F5.1"
 assert_not_contains "subagents: a silent corpse is not counted"        "$out" "*4"

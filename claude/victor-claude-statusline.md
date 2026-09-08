@@ -26,34 +26,34 @@ blooms `·` → `✢` → `✳` → `✻` → `✽` and closes again, one frame 
 same spinner Claude Code draws in front of "Working…"):
 
 ```
-Opus 5xh 50K/1M | ↗98% / 4h47 | ✻0.5 ⊂ $25 | ai | (+24)70% / 1d1h
+Opus 5xh 50K | ↗98% / 4h47 | ✻0.5 ⊂ $25 | ai | (+24)70% / 1d1h
 ```
 
 Idle, waiting on you (note the ticking "-N" clock and no flower):
 
 ```
-Opus 5xh 50K/1M | 98% / 4h47 | $0.1 -3m ⊂ $25 | ai | (+24)70% / 1d1h
+Opus 5xh 50K | 98% / 4h47 | $0.1 -3m ⊂ $25 | ai | (+24)70% / 1d1h
 ```
 
 Just after you hit Enter, before the first response has billed anything — **no
 turn price at all**, only the animated flower:
 
 ```
-Opus 5xh 50K/1M | 98% / 4h47 | ✻ ⊂ $25 | ai | (+24)70% / 1d1h
+Opus 5xh 50K | 98% / 4h47 | ✻ ⊂ $25 | ai | (+24)70% / 1d1h
 ```
 
 Idle long enough that the prompt cache is gone. The loss is priced either way;
 what changes with the amount is whether it moves. Below $2 it just sits there:
 
 ```
-Opus 5h 170K/1M | ↑87% / 1h41 | $7.8 (>1h⇒miss+=$1.6) ⊂ $10 | ai | (+15)82% / 3wd8h
+Opus 5h 170K | ↑87% / 1h41 | $7.8 (>1h⇒miss+=$1.6) ⊂ $10 | ai | (+15)82% / 3wd8h
 ```
 
 Above $2, `220K`, `>1h` and `$2.1` **blink red** in unison, one second on, one
 second off (§1.1); everything else holds still:
 
 ```
-Opus 5h 220K/1M | ↑87% / 1h42 | $1.5 (>1h⇒miss+=$2.1) ⊂ $23 | ai | (+15)82% / 3wd8h
+Opus 5h 220K | ↑87% / 1h42 | $1.5 (>1h⇒miss+=$2.1) ⊂ $23 | ai | (+15)82% / 3wd8h
 ```
 
 Five-hour quota exhausted: `quota-gate.sh` has parked this terminal. The sleep
@@ -143,14 +143,14 @@ memoised in `~/.claude/cwd/.tty-$PPID` beside the cwd markers.
 rather than quit cannot leave a microphone on a row with nothing behind it. The
 badge is only worth anything if it can be trusted.
 
-## 1. Model & context — `Opus 5xh 50K/1M`
+## 1. Model & context — `Opus 5xh 50K`
 
 | Piece | Meaning | Source (stdin JSON) |
 |-------|---------|---------------------|
 | `Opus 5` | model display name (with ` context)` trimmed to `)`) | `.model.display_name` |
 | `xh` | reasoning effort, abbreviated lower-case (`l`/`m`/`h`/`xh`/`max`), glued straight onto the name before any `(size)` | `.effort.level` |
 | `50K` | absolute context tokens used (blue) = `used% × size` | `.context_window.used_percentage` × size |
-| `/1M` | context window size | model's `(1M)` suffix, else `.context_window.context_window_size` |
+| `/200K` | context window size — **omitted on Opus**, whose window is always 1M | model's `(size)` suffix, else `.context_window.context_window_size` |
 
 - The effort letters carry **no separator**. It used to read `Opus 5/XH`, and
   that slash was a delimiter solving a problem that does not exist: the effort is
@@ -160,7 +160,7 @@ badge is only worth anything if it can be trusted.
 - **The letters are lower-case**, and that is what makes the gluing safe.
   `Opus 5XH` and especially `Opus 5M` read as part of the *name* — a model called
   5M — which is precisely the misreading a capital `M` invites on a line that
-  also prints `200K/1M` two cells later. `Opus 5m` cannot be read that way: a
+  also prints `66K/200K` two cells later. `Opus 5m` cannot be read that way: a
   lower-case tail is visibly a modifier hanging off the name instead of
   competing with it.
   `max` stays spelled out; `m` is medium, and a silent collision between the
@@ -168,10 +168,20 @@ badge is only worth anything if it can be trusted.
   happen.
 - The absolute token count (`50K`) is rendered **blue** when there is nothing to
   worry about — and **blinks** when there is (§1.1).
-- On the **1M window** the explicit `• N%` is **dropped** — the `used/size` pair
-  (e.g. `50K/1M`) already makes the ratio obvious. On **smaller windows** the
-  segment gains a trailing `• N%`, and that percentage turns **orange ≥ 65%**
-  and **red ≥ 95%**.
+- **On Opus the window size is not printed at all** — neither the `(1M)` the
+  display name arrives with (`Opus 5 (1M context)`), nor the `/1M` after the
+  token count. Opus only ever runs at 1M here, so both were repeating, on every
+  render of every session, a fact that was never in doubt; the segment reads
+  `Opus 5xh 330K`, and 330K against a window you already know is the whole
+  message. It survives everywhere it is still a variable: **Sonnet keeps
+  `/200K`**, because a small window is exactly the case where "how much room is
+  left" needs its denominator spelled out, and a non-Opus 1M model keeps `/1M`.
+  An Opus deliberately run at 200K would keep its label too — the suffix is
+  dropped only when it is the one that says nothing.
+- The explicit `• N%` follows the same line: it is **dropped on any 1M window**,
+  where the ratio is self-evident (`330K` out of a million, or the `used/size`
+  pair spelling it out), and **kept on smaller windows**, where it is not. There
+  it turns **orange ≥ 65%** and **red ≥ 95%**.
 
 ### 1.1 The blink
 
@@ -277,7 +287,7 @@ parameter expansion, not `sed`: `$ctx_render` is full of ESC and `&` bytes that
 Glued onto the model segment while subagents are running, and absent otherwise:
 
 ```
-Opus 5h 60K/1M +{O5h*2,S5m} | ↓48% / 4h44 | $0.3 -2m ⊂ $1.1 | victor-statusline | (-1)-1% / 0m
+Opus 5h 60K +{O5h*2,S5m} | ↓48% / 4h44 | $0.3 -2m ⊂ $1.1 | victor-statusline | (-1)-1% / 0m
 ```
 
 Two Opus-5 agents at high effort plus one Sonnet-5 at medium. Each entry is
@@ -667,7 +677,7 @@ just-hit-Enter window deliberately shows nothing instead.
 ## 3.1 Prompt-cache miss — the red `(2.7⏱)` on the turn price
 
 ```
-Opus 5xh 200K/1M | 98% / 4h47 | $5.2(2.7⏱) ⊂ $34 | ai | (+24)70% / 1d1h
+Opus 5xh 200K | 98% / 4h47 | $5.2(2.7⏱) ⊂ $34 | ai | (+24)70% / 1d1h
 ```
 
 A red `(2.7⏱)` glued to the turn price means **this turn did not reuse the cached
@@ -1412,8 +1422,10 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   (context %, quota left, burn arrow, idle age) inline.
 - The `/effort` suffix is spliced **around** the model's `(context)` label using
   pure shell parameter expansion (`${model%% (*}` / `${model#* (}`) — no subshell.
-- Size label comes from either the model's `(1M)` suffix (sed) or is computed from
-  `context_window_size` (bc), then abbreviated K/M.
+- Size label comes from either the model's `(size)` suffix (sed) or is computed
+  from `context_window_size` (bc), then abbreviated K/M — and is suppressed
+  entirely when the model is Opus on a 1M window (`is_opus`, set by the same
+  `case` that strips `(1M)` off the display name before the effort splice).
 - **Burn-rate arrow** (`↑↗↘↓`): awk ratio `r = quota_left_frac / time_left_frac`
   over the hardcoded 18000s window, with reciprocal-symmetric bands so surplus and
   deficit are treated evenly; no arrow when on-track; arrow colored green/orange/red.
@@ -1486,13 +1498,27 @@ effort=$(echo "$input" | jq -r '.effort.level // empty')
 # said yet what they are running on.
 model_name="$model"
 effort_raw="$effort"
+# --- Opus's window size is a constant, and a constant is not information ----
+# Opus only ever runs at 1M here, so "(1M)" in the name and "/1M" after the
+# token count repeat, on every render of every session, a fact that was never
+# in doubt. Both are dropped: the segment reads "Opus 5xh 330K", and 330K
+# against a window everyone in the room already knows is the whole message.
+# The label survives for every other family, because there it is a real
+# variable — Sonnet's "/200K" is a smaller window, and a small window is
+# exactly the case where "how much room is left" still needs its denominator
+# spelled out. (An Opus run at 200K would keep its label too: the suffix is
+# only stripped when it is the one that says nothing.)
+is_opus=""
+case "$model" in
+  *Opus*) is_opus=1; model="${model% (1M)}" ;;
+esac
 # Abbreviated to its initial(s), in LOWER case. The effort level is a mode you
 # set and then rarely change, so the bar only has to CONFIRM it, not teach it —
 # and one letter buys back three or four columns on the most-read part of the
 # line. Lower case because the abbreviation is glued straight onto the model
 # name ("Opus 5m"): a capital there reads as part of the name — "Opus 5M" looked
 # like a model called 5M, exactly the misreading a memory-size suffix invites on
-# a line that also prints "200K/1M" — while a lower-case letter is visibly a
+# a line that also prints "66K/200K" — while a lower-case letter is visibly a
 # modifier hanging off the name and never competes with it.
 # "max" is max and not m, deliberately: m is medium, and a silent collision
 # between the cheapest and the most expensive setting is the one abbreviation
@@ -1697,16 +1723,21 @@ if [ -n "$ctx" ]; then
     elif [ "$ctx_pct" -ge 65 ]; then
       pct_str="${ORANGE}${pct_str}${RESET}"
     fi
-    # On the 1M window the "used/size" pair (e.g. 100K/1M) already makes the
-    # percentage trivial to eyeball, so drop the explicit "• N%" there; keep it
-    # for smaller windows where the ratio is less obvious.
+    # On a 1M window the denominator is dropped entirely for Opus (see the
+    # is_opus note at the top) and the "• N%" goes with it: the pair "330K" and
+    # "a window you already know is 1M" IS the ratio, and a percentage would
+    # only restate it in a second unit. A non-Opus 1M window keeps "used/size",
+    # which is likewise self-evident. Smaller windows keep the explicit "• N%",
+    # where the ratio is not something the eye can do on sight.
     # The token count is emitted as a PLACEHOLDER, not as final text: whether it
     # should sit still in blue or breathe orange/red depends on the prompt-cache
     # TTL and on how long you have been idle, and neither is known until the
     # transcript has been parsed a hundred lines below. Substituting at the end
     # keeps this block about layout and the pulse decision in one place with the
     # other cache logic, instead of splitting the rule across the file.
-    if [ "$size_label" = "1M" ]; then
+    if [ "$size_label" = "1M" ] && [ -n "$is_opus" ]; then
+      model="$model @@CTX@@"
+    elif [ "$size_label" = "1M" ]; then
       model="$model @@CTX@@/${size_label}"
     else
       model="$model @@CTX@@/${size_label} • ${pct_str}"

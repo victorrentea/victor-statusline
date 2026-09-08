@@ -38,13 +38,27 @@ effort=$(echo "$input" | jq -r '.effort.level // empty')
 # said yet what they are running on.
 model_name="$model"
 effort_raw="$effort"
+# --- Opus's window size is a constant, and a constant is not information ----
+# Opus only ever runs at 1M here, so "(1M)" in the name and "/1M" after the
+# token count repeat, on every render of every session, a fact that was never
+# in doubt. Both are dropped: the segment reads "Opus 5xh 330K", and 330K
+# against a window everyone in the room already knows is the whole message.
+# The label survives for every other family, because there it is a real
+# variable — Sonnet's "/200K" is a smaller window, and a small window is
+# exactly the case where "how much room is left" still needs its denominator
+# spelled out. (An Opus run at 200K would keep its label too: the suffix is
+# only stripped when it is the one that says nothing.)
+is_opus=""
+case "$model" in
+  *Opus*) is_opus=1; model="${model% (1M)}" ;;
+esac
 # Abbreviated to its initial(s), in LOWER case. The effort level is a mode you
 # set and then rarely change, so the bar only has to CONFIRM it, not teach it —
 # and one letter buys back three or four columns on the most-read part of the
 # line. Lower case because the abbreviation is glued straight onto the model
 # name ("Opus 5m"): a capital there reads as part of the name — "Opus 5M" looked
 # like a model called 5M, exactly the misreading a memory-size suffix invites on
-# a line that also prints "200K/1M" — while a lower-case letter is visibly a
+# a line that also prints "66K/200K" — while a lower-case letter is visibly a
 # modifier hanging off the name and never competes with it.
 # "max" is max and not m, deliberately: m is medium, and a silent collision
 # between the cheapest and the most expensive setting is the one abbreviation
@@ -249,16 +263,21 @@ if [ -n "$ctx" ]; then
     elif [ "$ctx_pct" -ge 65 ]; then
       pct_str="${ORANGE}${pct_str}${RESET}"
     fi
-    # On the 1M window the "used/size" pair (e.g. 100K/1M) already makes the
-    # percentage trivial to eyeball, so drop the explicit "• N%" there; keep it
-    # for smaller windows where the ratio is less obvious.
+    # On a 1M window the denominator is dropped entirely for Opus (see the
+    # is_opus note at the top) and the "• N%" goes with it: the pair "330K" and
+    # "a window you already know is 1M" IS the ratio, and a percentage would
+    # only restate it in a second unit. A non-Opus 1M window keeps "used/size",
+    # which is likewise self-evident. Smaller windows keep the explicit "• N%",
+    # where the ratio is not something the eye can do on sight.
     # The token count is emitted as a PLACEHOLDER, not as final text: whether it
     # should sit still in blue or breathe orange/red depends on the prompt-cache
     # TTL and on how long you have been idle, and neither is known until the
     # transcript has been parsed a hundred lines below. Substituting at the end
     # keeps this block about layout and the pulse decision in one place with the
     # other cache logic, instead of splitting the rule across the file.
-    if [ "$size_label" = "1M" ]; then
+    if [ "$size_label" = "1M" ] && [ -n "$is_opus" ]; then
+      model="$model @@CTX@@"
+    elif [ "$size_label" = "1M" ]; then
       model="$model @@CTX@@/${size_label}"
     else
       model="$model @@CTX@@/${size_label} • ${pct_str}"
