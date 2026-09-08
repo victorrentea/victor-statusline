@@ -1036,9 +1036,10 @@ timeouts remain, although an individual weekly sleep is now only about an hour.
 Second-to-last segment: the **repo**, plus `@branch` when the branch is not the
 trunk. The name sits on a **colour chip** — a background hashed from its
 path, one of twenty combinations, so a project always looks the same (see
-below). The `@branch` stays **teal** (256-colour 80, `#5fd7d7`) and outside
-the chip — the closest match to the border Claude Code draws around the
-prompt, so that half still reads as part of the same frame.
+below). The `@branch` sits outside the chip and is **not coloured at all** — it
+renders in the bar's default foreground, like every other figure on the line.
+The chip is the one painted thing in this segment; a coloured tail hanging off
+it read as a second highlight competing with the folder name.
 
 | cwd | Segment |
 |-----|---------|
@@ -1139,8 +1140,11 @@ an index that now points past the end of a shorter palette.
 `cksum` and not `shasum`: the hash only has to spread paths over the palette, and
 it is the cheaper fork.
 
-**The branch stays outside the chip**, in the old teal — colouring it in would
-make one folder look like a different block depending on where its HEAD is.
+**The branch stays outside the chip**, and unpainted. Outside, because colouring
+it in would make one folder look like a different block depending on where its
+HEAD is. Unpainted, because only the folder name earns colour here: the chip is
+what the eye is meant to land on, and a teal branch beside it split that
+attention in two.
 
 ### …and it publishes what it found, for anything outside the process
 
@@ -2834,10 +2838,13 @@ fi
 # than unpainted: the chip is a convenience, never a reason for a blank segment.
 [ -n "$_chip" ] || _chip="$TEAL"
 
-# The branch stays TEAL and OUTSIDE the chip. The chip frames "which folder",
-# and a branch name is not part of that — putting it inside would make the same
-# folder look like a different block depending on where its HEAD is.
-[ -n "$branch_sfx" ] && branch_sfx="${TEAL}${branch_sfx}${RESET}"
+# The branch is UNPAINTED and OUTSIDE the chip. Outside, because the chip frames
+# "which folder", and a branch name is not part of that — putting it inside would
+# make the same folder look like a different block depending on where its HEAD is.
+# Unpainted, because the chip is already the one coloured thing in this segment:
+# a teal tail hanging off it read as a second highlight competing with the folder
+# name, so the branch now uses the bar's default foreground like every other
+# figure on the line, and the eye goes straight to the chip.
 [ -n "$loc" ] && out="$out | ${_chip}${loc}${RESET}${branch_sfx}"
 
 # --- Weekly quota, last cell (built above, next to its arithmetic) ----------

@@ -1400,10 +1400,13 @@ fi
 # than unpainted: the chip is a convenience, never a reason for a blank segment.
 [ -n "$_chip" ] || _chip="$TEAL"
 
-# The branch stays TEAL and OUTSIDE the chip. The chip frames "which folder",
-# and a branch name is not part of that — putting it inside would make the same
-# folder look like a different block depending on where its HEAD is.
-[ -n "$branch_sfx" ] && branch_sfx="${TEAL}${branch_sfx}${RESET}"
+# The branch is UNPAINTED and OUTSIDE the chip. Outside, because the chip frames
+# "which folder", and a branch name is not part of that — putting it inside would
+# make the same folder look like a different block depending on where its HEAD is.
+# Unpainted, because the chip is already the one coloured thing in this segment:
+# a teal tail hanging off it read as a second highlight competing with the folder
+# name, so the branch now uses the bar's default foreground like every other
+# figure on the line, and the eye goes straight to the chip.
 [ -n "$loc" ] && out="$out | ${_chip}${loc}${RESET}${branch_sfx}"
 
 # --- Weekly quota, last cell (built above, next to its arithmetic) ----------
