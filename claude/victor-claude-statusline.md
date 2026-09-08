@@ -46,14 +46,14 @@ Idle long enough that the prompt cache is gone. The loss is priced either way;
 what changes with the amount is whether it moves. Below $2 it just sits there:
 
 ```
-Opus 5h 170K/1M | ↑87% / 1h41 | $7.8 >1h (miss=$1.6) ⊂ $10 | ai | (+15)82% / 3wd8h
+Opus 5h 170K/1M | ↑87% / 1h41 | $7.8 (>1h⇒miss+=$1.6) ⊂ $10 | ai | (+15)82% / 3wd8h
 ```
 
 Above $2, `220K`, `>1h` and `$2.1` **blink red** in unison, one second on, one
 second off (§1.1); everything else holds still:
 
 ```
-Opus 5h 220K/1M | ↑87% / 1h42 | $1.5 >1h (miss=$2.1) ⊂ $23 | ai | (+15)82% / 3wd8h
+Opus 5h 220K/1M | ↑87% / 1h42 | $1.5 (>1h⇒miss+=$2.1) ⊂ $23 | ai | (+15)82% / 3wd8h
 ```
 
 Five-hour quota exhausted: `quota-gate.sh` has parked this terminal. The sleep
@@ -185,7 +185,7 @@ priority order:
 | it is **about to expire** (idle ≥ 0.8 × TTL) | orange / normal |
 | context is simply **enormous** (> 300K tokens) | red, **static** |
 
-The first two **also blink the `-N` clock and its `miss=$…` price**, in the
+The first two **also blink the `-N` clock and its `miss+=$…` price**, in the
 same colour on the same beat, and that pairing is the entire point: the clock
 says how much time the cache has left, the token count says how much that cache
 is *worth*, and the price says it in money. Each alone answers a fraction of "is
@@ -207,15 +207,15 @@ Two deliberate choices:
   terminal's own contrast instead of white-on-dark-red, and on the off-beat the
   text is simply *normal* — fully legible half the time by construction, so the
   figure never has to be read through the alarm.
-- **Only the variables blink.** In `-51m > 5m (miss=$1.7)`, the parts that
-  move are `-51m` and `$1.7`. The scaffolding around them (`> 5m`, `miss=`)
+- **Only the variables blink.** In `(-51m > 5m⇒miss+=$1.7)`, the parts that
+  move are `-51m` and `$1.7`. The scaffolding around them (`> 5m`, `⇒miss+=`)
   says how to read those two figures and holds still; blinking it too
   just widened the flashing block into a bar of moving text you had to wait out.
 
 ### Reporting and alarming are two different thresholds
 
 The **price is always reported**. Every expired or expiring cache prints its
-`(miss=$…)`, at any size, because that figure answers a question you may be
+`(…⇒miss+=$…)`, at any size, because that figure answers a question you may be
 asking on purpose — *what did stepping away just cost me?* — and a number
 withheld below an arbitrary line makes the bar useless for checking.
 
@@ -224,15 +224,15 @@ would cost more than **$2** (`CLAUDE_MISS_FLOOR` to change it). So a cheap miss
 sits there in plain text and a dear one starts moving:
 
 ```
-… | $7.8 >1h (miss=$1.4) ⊂ $10 | …      ← states the loss, stays still
-… | $7.8 >1h (miss=$2.1) ⊂ $10 | …      ← ">1h" and "$2.1" blink red
+… | $7.8 (>1h⇒miss+=$1.4) ⊂ $10 | …    ← states the loss, stays still
+… | $7.8 (>1h⇒miss+=$2.1) ⊂ $10 | …    ← ">1h" and "$2.1" blink red
 ```
 
 The alarm threshold used to be a flat 100K tokens, which is the wrong unit: what
 makes a miss worth interrupting you over is the **money**, and the same 100K is
 ~19c of Haiku and ~$1.90 of Opus on a 1h TTL. It is the *same* figure the bar is
 already printing, so the rule explains itself on screen — you see a blinking
-`(miss=$2.1)` beside a still `(miss=$1.4)` and the reason is the number itself,
+`⇒miss+=$2.1` beside a still `⇒miss+=$1.4` and the reason is the number itself,
 not a token count you would have to convert in your head.
 
 `cache_phase()` therefore knows nothing about money — it answers a pure question
@@ -655,7 +655,7 @@ quantity, a piece of the same money.
   timeline already uses. In a bar where every other cell is a number, a lone
   English word was the only thing asking to be *read* rather than seen — and it
   spent three cells in the one segment that also has to fit a price
-  (`$7.8 -51m > 5m (miss=$2.1) ⊂ $10` is tight enough already). `>1h` keeps its
+  (`$7.8 (-51m > 5m⇒miss+=$2.1) ⊂ $10` is tight enough already). `>1h` keeps its
   own shape: the `>` points the same direction the minus would, and `->1h` would
   stack two symbols onto one meaning.
 
@@ -801,9 +801,9 @@ blink only above **$2** — see §1.1):
 | Age since the last turn | Rendering | Meaning |
 |-------------------------|-----------|---------|
 | `< 0.8 × TTL` | plain, `-12m` | prefix is warm — no price, nothing at stake |
-| `0.8 × TTL … TTL` | orange, `-48m <= 1h (miss=$2.1)` | last chance — send now and you still pay 0.1× |
-| `≥ TTL` | red, `-51m > 5m (miss=$2.1)` | prefix is gone; your next message rebuilds it at the write price |
-| `≥ 1 h` | red, `>1h (miss=$2.1)` | as above, and the exact age no longer matters |
+| `0.8 × TTL … TTL` | orange, `(-48m <= 1h⇒miss+=$2.1)` | last chance — send now and you still pay 0.1× |
+| `≥ TTL` | red, `(-51m > 5m⇒miss+=$2.1)` | prefix is gone; your next message rebuilds it at the write price |
+| `≥ 1 h` | red, `(>1h⇒miss+=$2.1)` | as above, and the exact age no longer matters |
 
 The colour **blinks** on/off in the bottom three rows only when the price clears
 $2; below that the same text is rendered once, in the terminal's normal colour.
@@ -813,6 +813,16 @@ attached — the reader has to remember what the TTL is and do the comparison. S
 the blinking form prints the comparison itself, `-51m > 5m` or
 `-48m <= 1h`, which is also the one wording that survives the TTL being 1 h
 instead of 5 m without quietly changing meaning.
+
+**One bracket, one statement.** The age and the price live inside a single pair
+of parentheses, joined by `⇒`, because they are cause and consequence rather
+than two readings that happen to arrive together. The earlier shape set them
+side by side — `-51m > 5m (miss=$2.1)` — and left the connective for the reader
+to supply; printing it removes that step. The `+=` is doing the other half of
+the work: it says the figure is what your **next** message adds on top of the
+turn price immediately to its left, not a second total competing with it. The
+brackets also fence the price off from the `⊂ $10` budget that follows, which it
+would otherwise sit flush against and be read as part of.
 
 **Past an hour it stops counting.** `2h`, `16h` and `3d` all mean one single
 thing — you are rebuilding from scratch — so they collapse into `>1h`, rather
@@ -824,7 +834,7 @@ decided about and the gap between `41m` and `58m` is the gap between "later" and
 "now".
 
 **And it prices the loss — in the orange phase too, not just past the TTL.**
-`(miss=$2.1)` is the whole context re-written at the cache-**write** price
+`miss+=$2.1` is the whole context re-written at the cache-**write** price
 instead of read at the cache-**read** price — the spread between the two
 multipliers, over `used_tokens`, at the model's own input rate (Opus $5/MTok,
 Sonnet $3, Haiku $1, Fable $10). Naming the price *while the prefix is still
@@ -1377,7 +1387,7 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   before it, red once past it. That predicate is deliberately **money-blind** — it
   answers a question about time only — and a second predicate, `miss_big()`,
   decides whether the state is worth *blinking* about (uncached re-send > **$2**,
-  the same figure the bar prints as `(miss=$2.1)`). Splitting them is what lets
+  the same figure the bar prints as `⇒miss+=$2.1`). Splitting them is what lets
   the clock report a cheap miss in plain text instead of having to choose between
   shouting and staying silent; gating the alarm on money rather than tokens means
   the threshold means the same thing on Haiku as on Opus, and the reason for the
@@ -1998,11 +2008,21 @@ fmt_age() {
   # Say WHY it is blinking, in the terms the reader would otherwise have to
   # supply from memory: the idle time, the TTL it is measured against, and what
   # crossing it costs. "-51m" alone is a number with no verdict attached —
-  # "-51m > 5m (miss=$1.7)" is the verdict, and it is also the one form that
+  # "(-51m > 5m⇒miss+=$1.7)" is the verdict, and it is also the one form that
   # survives the TTL being 1h instead of 5m without silently changing meaning.
   #
+  # The whole clause sits INSIDE one pair of brackets because it is one
+  # statement, not two. The older shape — "-51m > 5m (miss=$1.7)" — put the age
+  # and the price side by side as if they were separate readings you happened to
+  # get at the same time, and left the reader to supply the connective. They are
+  # not separate: the idle time is the CAUSE and the price is its CONSEQUENCE,
+  # so "⇒" is printed rather than implied, and "+=" says the figure is what your
+  # next message ADDS on top of the turn price to its left, not a second total
+  # competing with it. Bracketing the pair also stops the price from floating
+  # loose next to the "⊂ $10" that follows and reading as part of the budget.
+  #
   # Only the two VARIABLES blink — the elapsed time and the price. The words
-  # around them ("> 5m", "miss=") are fixed scaffolding that says how to
+  # around them ("> 5m", "⇒miss+=") are fixed scaffolding that says how to
   # read those two figures, and blinking them too just widened the flashing block
   # until it was a bar of moving text you had to wait out to read. Held steady,
   # they stay legible during the off-beat and the eye lands straight on whichever
@@ -2013,7 +2033,7 @@ fmt_age() {
   # may be asking on purpose ("what did stepping away just cost me?") and a number
   # withheld below an arbitrary line is a bar you cannot use to check. The BLINK is
   # reserved for the ones worth interrupting you over ($MISS_FLOOR). So a cheap
-  # miss prints "-51m > 5m (miss=$1.4)" in plain text and stays out of the way,
+  # miss prints "(-51m > 5m⇒miss+=$1.4)" in plain text and stays out of the way,
   # and only a dear one starts moving.
   _phase=$(cache_phase "$_secs")
   case "$_phase" in
@@ -2032,10 +2052,10 @@ fmt_age() {
   if [ "$_price" = '$0.0' ]; then
     printf ' %s%s' "$_rel" "$_cmp"
   elif miss_big; then
-    printf ' %s%s (miss=%s)' \
+    printf ' (%s%s⇒miss+=%s)' \
       "$(pulse "$_hue" "$_rel")" "$_cmp" "$(pulse "$_hue" "$_price")"
   else
-    printf ' %s%s (miss=%s)' "$_rel" "$_cmp" "$_price"
+    printf ' (%s%s⇒miss+=%s)' "$_rel" "$_cmp" "$_price"
   fi
 }
 
@@ -2100,7 +2120,7 @@ trunc1() { awk -v v="${1:-0}" 'BEGIN{ printf "%.1f", int(v*10 + 1e-9)/10 }'; }
 # which is the wrong unit: what makes a miss worth interrupting you over is the
 # MONEY, and the same 100K is ~19c of Haiku and ~$1.90 of Opus-on-a-1h-TTL.
 # Testing the dollar figure the bar is about to print also makes the rule
-# self-evident on screen — you see "(miss=$2.1)" blinking next to a "(miss=$1.4)"
+# self-evident on screen — you see "⇒miss+=$2.1" blinking next to a "⇒miss+=$1.4"
 # that does not, and the reason is the number itself, not a token count you would
 # have to convert. Raise the floor if the bar still interrupts too eagerly:
 #   export CLAUDE_MISS_FLOOR=5

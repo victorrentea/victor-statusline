@@ -560,11 +560,21 @@ fmt_age() {
   # Say WHY it is blinking, in the terms the reader would otherwise have to
   # supply from memory: the idle time, the TTL it is measured against, and what
   # crossing it costs. "-51m" alone is a number with no verdict attached —
-  # "-51m > 5m (miss=$1.7)" is the verdict, and it is also the one form that
+  # "(-51m > 5m⇒miss+=$1.7)" is the verdict, and it is also the one form that
   # survives the TTL being 1h instead of 5m without silently changing meaning.
   #
+  # The whole clause sits INSIDE one pair of brackets because it is one
+  # statement, not two. The older shape — "-51m > 5m (miss=$1.7)" — put the age
+  # and the price side by side as if they were separate readings you happened to
+  # get at the same time, and left the reader to supply the connective. They are
+  # not separate: the idle time is the CAUSE and the price is its CONSEQUENCE,
+  # so "⇒" is printed rather than implied, and "+=" says the figure is what your
+  # next message ADDS on top of the turn price to its left, not a second total
+  # competing with it. Bracketing the pair also stops the price from floating
+  # loose next to the "⊂ $10" that follows and reading as part of the budget.
+  #
   # Only the two VARIABLES blink — the elapsed time and the price. The words
-  # around them ("> 5m", "miss=") are fixed scaffolding that says how to
+  # around them ("> 5m", "⇒miss+=") are fixed scaffolding that says how to
   # read those two figures, and blinking them too just widened the flashing block
   # until it was a bar of moving text you had to wait out to read. Held steady,
   # they stay legible during the off-beat and the eye lands straight on whichever
@@ -575,7 +585,7 @@ fmt_age() {
   # may be asking on purpose ("what did stepping away just cost me?") and a number
   # withheld below an arbitrary line is a bar you cannot use to check. The BLINK is
   # reserved for the ones worth interrupting you over ($MISS_FLOOR). So a cheap
-  # miss prints "-51m > 5m (miss=$1.4)" in plain text and stays out of the way,
+  # miss prints "(-51m > 5m⇒miss+=$1.4)" in plain text and stays out of the way,
   # and only a dear one starts moving.
   _phase=$(cache_phase "$_secs")
   case "$_phase" in
@@ -594,10 +604,10 @@ fmt_age() {
   if [ "$_price" = '$0.0' ]; then
     printf ' %s%s' "$_rel" "$_cmp"
   elif miss_big; then
-    printf ' %s%s (miss=%s)' \
+    printf ' (%s%s⇒miss+=%s)' \
       "$(pulse "$_hue" "$_rel")" "$_cmp" "$(pulse "$_hue" "$_price")"
   else
-    printf ' %s%s (miss=%s)' "$_rel" "$_cmp" "$_price"
+    printf ' (%s%s⇒miss+=%s)' "$_rel" "$_cmp" "$_price"
   fi
 }
 
@@ -662,7 +672,7 @@ trunc1() { awk -v v="${1:-0}" 'BEGIN{ printf "%.1f", int(v*10 + 1e-9)/10 }'; }
 # which is the wrong unit: what makes a miss worth interrupting you over is the
 # MONEY, and the same 100K is ~19c of Haiku and ~$1.90 of Opus-on-a-1h-TTL.
 # Testing the dollar figure the bar is about to print also makes the rule
-# self-evident on screen — you see "(miss=$2.1)" blinking next to a "(miss=$1.4)"
+# self-evident on screen — you see "⇒miss+=$2.1" blinking next to a "⇒miss+=$1.4"
 # that does not, and the reason is the number itself, not a token count you would
 # have to convert. Raise the floor if the bar still interrupts too eagerly:
 #   export CLAUDE_MISS_FLOOR=5
