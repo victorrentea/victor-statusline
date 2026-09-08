@@ -2680,10 +2680,13 @@ if [ -n "$week" ]; then
       # glyph has to. The "%" is NOT repeated on the pace — it is glued to a
       # figure that already carries the unit, and both are points of the same
       # window, so one "%" serves the pair.
+      # "-0" is awk's rounding of a pace between -0.5 and 0, and it reads as a
+      # broken number rather than as the "half a point behind, i.e. on pace"
+      # it means. It belongs in the same bucket as "+0": plain "(0)".
       case "$delta" in
+        0|-0) wtxt="(0)"; wcol="" ;;
         -*) wtxt="(-${delta#-})"
             if [ "${delta#-}" -ge 10 ]; then wcol="$RED"; else wcol="$ORANGE"; fi ;;
-        0)  wtxt="(0)"; wcol="" ;;
         *)  wtxt="(+${delta})"; wcol="$GREEN" ;;
       esac
       if [ -n "$wcol" ]; then
