@@ -69,11 +69,12 @@ cell instead. Its wake clock is the next hourly live quota probe, not a blind
 multi-day sleep to the cached reset:
 
 ```
-Opus 5h 60% / 3h22 | ai | (-6)0%💤 → Fri 17:08 / 7h
+Opus 5h 60% / 3h22 ai (-6)0%💤 → Fri 17:08 / 7h
 ```
 
-Five `|`-separated segments: **model/effort/context**, **5h quota + burn-rate**,
-**spend**, **location**, **7-day quota**. There is **no leading emoji** on the
+Five segments: **model/effort/context**, **5h quota + burn-rate**, **spend**,
+**location**, **7-day quota** — `|`-separated, except around the location, whose
+colour chip is its own separator (§5). There is **no leading emoji** on the
 model segment.
 
 **The order is by how fast each figure moves.** The model line is fixed; the 5h
@@ -85,7 +86,9 @@ that falls off the right edge first on a narrow terminal.
 **`|` separates segments; `/` joins readings of the *same* window** — the 5h
 pair `↗98% / 4h47`, and the weekly triple `(+24)70% / 1d1h` (pace, then
 what's left, then how long the window has to run). It also buys back a couple of
-columns per join versus a wordier separator.
+columns per join versus a wordier separator. The pipe is there because two runs
+of plain text a space apart read as one run; where a segment is painted, it has
+nothing left to do — which is why the location has none (§5).
 
 ---
 
@@ -1061,6 +1064,15 @@ renders in the bar's default foreground, like every other figure on the line.
 The chip is the one painted thing in this segment; a coloured tail hanging off
 it read as a second highlight competing with the folder name.
 
+**No `|` on either side of it.** The pipe earns its place between plain-text
+cells, which would otherwise run together; the folder is never plain text —
+the chip's own edges are a harder boundary than a pipe ever was. Carrying both
+made the eye cross four separators (pipe, chip edge, chip edge, pipe) to read
+one word. A single space on each side is all the air the chip needs, so the
+segment now reads `⊂ $3.0 victor-skills (-16)25%`. The pipe returns only when
+there is no location at all, since then the neighbours really are two runs of
+plain text.
+
 | cwd | Segment |
 |-----|---------|
 | not a repo | `workspace` |
@@ -1460,7 +1472,7 @@ To reproduce this exact status line: save the script below to `~/.claude/statusl
 ```sh
 #!/bin/sh
 # Claude Code status line:
-#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend | folder[@branch] | 7d quota"
+#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend folder[@branch] 7d quota"
 #
 # Ordered by how fast each figure moves: the model line is fixed, the 5h window
 # and the spend change within a turn, the folder changes when you cd, and the
@@ -2899,10 +2911,23 @@ fi
 # a teal tail hanging off it read as a second highlight competing with the folder
 # name, so the branch now uses the bar's default foreground like every other
 # figure on the line, and the eye goes straight to the chip.
-[ -n "$loc" ] && out="$out | ${_chip}${loc}${RESET}${branch_sfx}"
+#
+# NO " | " ON EITHER SIDE. Every other cell needs the pipe because two runs of
+# plain text with only a space between them read as one run; the folder does
+# not, because it is the one segment carrying a background colour, and a
+# coloured block is already a harder edge than a pipe ever was. Keeping both
+# meant the eye crossed three separators — pipe, chip edge, chip edge, pipe —
+# to read one word. A single space on each side is enough air around the chip;
+# the pipes are what the chip replaced.
+if [ -n "$loc" ]; then
+  out="$out ${_chip}${loc}${RESET}${branch_sfx}"
+  _loc_sep=' '            # the next cell butts against the chip, not a pipe
+fi
 
 # --- Weekly quota, last cell (built above, next to its arithmetic) ----------
-[ -n "$week_seg" ] && out="$out | $week_seg"
+# Its leading separator is the folder's trailing one: a space when the chip is
+# there to divide them, the usual pipe when there is no folder segment at all.
+[ -n "$week_seg" ] && out="$out${_loc_sep:- | }$week_seg"
 
 # --- Subagents in flight: "+{O5h*2,S5m}" glued onto the model segment -------
 # WHAT IT SAYS: how many subagents are working right now, on which brain, at

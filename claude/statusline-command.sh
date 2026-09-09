@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code status line:
-#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend | folder[@branch] | 7d quota"
+#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend folder[@branch] 7d quota"
 #
 # Ordered by how fast each figure moves: the model line is fixed, the 5h window
 # and the spend change within a turn, the folder changes when you cd, and the
@@ -1439,10 +1439,23 @@ fi
 # a teal tail hanging off it read as a second highlight competing with the folder
 # name, so the branch now uses the bar's default foreground like every other
 # figure on the line, and the eye goes straight to the chip.
-[ -n "$loc" ] && out="$out | ${_chip}${loc}${RESET}${branch_sfx}"
+#
+# NO " | " ON EITHER SIDE. Every other cell needs the pipe because two runs of
+# plain text with only a space between them read as one run; the folder does
+# not, because it is the one segment carrying a background colour, and a
+# coloured block is already a harder edge than a pipe ever was. Keeping both
+# meant the eye crossed three separators — pipe, chip edge, chip edge, pipe —
+# to read one word. A single space on each side is enough air around the chip;
+# the pipes are what the chip replaced.
+if [ -n "$loc" ]; then
+  out="$out ${_chip}${loc}${RESET}${branch_sfx}"
+  _loc_sep=' '            # the next cell butts against the chip, not a pipe
+fi
 
 # --- Weekly quota, last cell (built above, next to its arithmetic) ----------
-[ -n "$week_seg" ] && out="$out | $week_seg"
+# Its leading separator is the folder's trailing one: a space when the chip is
+# there to divide them, the usual pipe when there is no folder segment at all.
+[ -n "$week_seg" ] && out="$out${_loc_sep:- | }$week_seg"
 
 # --- Subagents in flight: "+{O5h*2,S5m}" glued onto the model segment -------
 # WHAT IT SAYS: how many subagents are working right now, on which brain, at
