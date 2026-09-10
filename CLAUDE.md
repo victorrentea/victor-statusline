@@ -58,6 +58,34 @@ Careful: `diff` here is rewritten by an rtk hook that summarises instead of
 comparing, and it has reported "Files are identical" for files that differ. Use
 `cmp`, `md5`, or `rtk proxy diff -u` when the answer actually matters.
 
+## Regenerate the screenshots in the same commit, and push
+
+Any change to the shape of a segment — a new field, a dropped separator, a chip,
+a renamed glyph — ends with:
+
+```sh
+./docs/screenshots/make-lines.sh     # sample payloads -> docs/screenshots/lines/*.ansi
+python3 docs/screenshots/render.py   # *.ansi + the field notes -> *.png
+git add -A && git commit && git push
+```
+
+**Do not wait to be asked for either step.** The README leads with those five
+pictures, so a bar change that skips them ships a README describing a status line
+that no longer exists — and `git push` is what makes any of it real, since the
+raw GitHub URLs are what people install from.
+
+`render.py` finds each annotated field by REGEX and dies on the first field that
+stops matching, which is the mechanism that catches this. Treat that failure as
+the screenshot's way of reporting drift, and fix the regex AND the prose next to
+it — do not work around it. It had been failing silently on `\d+K/1M` (the Opus
+1M window stopped printing its denominator) and on `(miss=$…)`, which means the
+pictures had been stale through several bar changes before anyone re-ran it.
+
+`make-lines.sh` needs no terminal: the Copilot line's width comes from
+`COPILOT_STATUSLINE_COLS`, forced to 0 there, because that script otherwise sizes
+itself off `/dev/tty` and an agent-run generator produced a picture of a line
+ending in "…".
+
 ## The behaviour docs are part of the change, not a follow-up
 
 Both scripts carry a MAINTENANCE RULE in their header saying the companion doc

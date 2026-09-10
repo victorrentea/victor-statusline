@@ -89,10 +89,11 @@ CLAUDE_MODEL = [
      "model display name plus the reasoning effort, abbreviated to one or two "
      "lower-case letters and glued straight on: <b>l</b>ow, <b>m</b>edium, "
      "<b>h</b>igh, <b>xh</b>igh, <b>max</b>."),
-    (r"\d+K/1M", "model",
-     "context tokens used / window size. The used half is blue while healthy and "
-     "blinks when it is not; on windows smaller than 1M the segment also gains a "
-     "<code>• N%</code>, orange ≥65%, red ≥95%."),
+    (r"\d+K(?= )", "model",
+     "context tokens in play. Blue while healthy, blinking when it is not. On a 1M "
+     "Opus window the denominator is dropped — <i>330K out of a window you already "
+     "know is 1M</i> is the ratio, and a second unit would only restate it; smaller "
+     "windows print <code>used/size • N%</code>, orange ≥65%, red ≥95%."),
 ]
 CLAUDE_SPEND = [
     (r"✻[\d.]+", "spend",
@@ -107,7 +108,9 @@ CLAUDE_SPEND = [
 CLAUDE_LOC = [
     (r"victor-statusline", "loc",
      "the current folder, on a colour chip hashed from its full path (twenty "
-     "combinations), so a given folder always looks the same."),
+     "combinations), so a given folder always looks the same. The loud chip and the "
+     "quiet one on the 5h cell give the bar its <b>zebra</b>: plain, chipped, plain, "
+     "chipped, plain — sorted by the eye before a glyph is read."),
     (r"@fix-cache", "loc",
      "the git branch, teal and outside the chip. Omitted on <code>main</code> / "
      "<code>master</code>, so any <code>@…</code> you do see is worth reading."),
@@ -124,12 +127,15 @@ SPECS = [
              "5-hour quota <b>left</b>, led by the burn-rate arrow: <code>↑</code> / "
              "<code>↗</code> green = more quota left than clock, no arrow = spending in "
              "step with the window, <code>↘</code> / <code>↓</code> orange / red = "
-             "burning it faster than it drains. The figure turns orange under 15%, red "
-             "under 5%."),
-            (r"\d+h\d+(?= \|)", "5h",
+             "burning it faster than it drains. The whole cell sits on a <b>chip</b> — a "
+             "dark blue-grey block matched to the window — and it is the <b>chip's "
+             "ground</b> that warns: dark amber under 15%, dark maroon under 5%. That is "
+             "also why the cell has no <code>|</code> around it."),
+            (r"\d+h\d+(?= )", "5h",
              "time until the 5-hour window resets. A duration (<code>3h19</code>), never "
              "a clock time — the segment already contains a wall clock when parked, and "
-             "<code>3:19</code> would be ambiguous."),
+             "<code>3:19</code> would be ambiguous. <code>/</code> is the only separator "
+             "left inside the chip; the chip's edge is what ends the cell."),
         ] + CLAUDE_SPEND + CLAUDE_LOC + [
             (r"\([+-]?\d+\)", "week",
              "weekly pace, in <b>percentage points</b> off a straight line "
@@ -215,7 +221,7 @@ SPECS = [
             dict(src="cache-warm",
                  caption="<b>warm</b>· 12 min into a 1-hour cache",
                  fields=[
-                     (r"300K/1M", "model",
+                     (r"300K(?= )", "model",
                       "the live context, blue: all of this is sitting in the cache, and "
                       "every turn reads it back at <b>0.1×</b> the input price."),
                      (r"-\d+m(?= ⊂)", "spend",
@@ -226,7 +232,7 @@ SPECS = [
             dict(src="cache-expiring",
                  caption="<b>expiring</b>· 52 min in — past 0.8 × TTL",
                  fields=[
-                     (r"300K/1M", "model",
+                     (r"300K(?= )", "model",
                       "the same counter, now orange. It and the clock share <b>one "
                       "predicate</b> (<code>cache_phase()</code>), so the two halves of "
                       "the bar can never disagree about what state the cache is in."),
@@ -237,7 +243,7 @@ SPECS = [
                       "remember the TTL to draw one. The TTL is <b>read, not assumed</b>: "
                       "the API says which ephemeral bucket each cache write landed in, "
                       "so the session states its own."),
-                     (r"\(miss=\$[\d.]+\)", "spend",
+                     (r"miss\+=\$[\d.]+", "spend",
                       "<b>the loss, priced before it happens</b> — the whole live "
                       "context re-written at the cache-<b>write</b> price instead of "
                       "read at the cache-<b>read</b> price. That spread is 1.15× base "

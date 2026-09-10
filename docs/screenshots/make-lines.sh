@@ -193,8 +193,14 @@ json.dump({
     "today_credits_date": datetime.datetime.now().strftime("%Y-%m-%d"),
 }, open(sys.argv[1], "w"))
 PY
+# COLS=0 means "unknown width" to the Copilot script, which disables trimming.
+# It has to be forced here: that script sizes itself off /dev/tty, and a
+# generator run from a script (or from an agent) has no controlling terminal, so
+# it fell back to an 80-column `tput cols` and silently produced a screenshot of
+# a line ending in "…". A picture of a truncated bar is worse than no picture.
 printf '{"display_name":"claude-sonnet-5 · medium · 264K context","current_context_tokens":55000,"displayed_context_limit":264000}' \
-  | bash "$REPO/copilot/statusline.sh" | tr -d '\n' > "$OUT/copilot.ansi"
+  | COPILOT_STATUSLINE_COLS="${COPILOT_STATUSLINE_COLS:-0}" \
+  bash "$REPO/copilot/statusline.sh" | tr -d '\n' > "$OUT/copilot.ansi"
 
 for f in "$OUT"/*.ansi; do
   printf '%-28s %s\n' "$(basename "$f")" "$(sed 's/\x1b\[[0-9;]*m//g' "$f")"
