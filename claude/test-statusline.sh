@@ -219,6 +219,44 @@ assert_not_contains "subagents: a silent corpse is not counted"        "$out" "*
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
 assert_contains "subagents: cached second render is identical" "$out" "+{O5h*2,H4.5,S5m}"
 
+# --- Case 7: a done-marker that has scrolled out of the scanned tail ---------
+# Only the last $CLAUDE_SUB_TAIL bytes of the parent transcript are read, and a
+# busy session writes past its own markers. Once F's notification falls outside
+# that window the scan can no longer see that F ever stopped -- unless the first
+# render wrote the id down. This is the bug that had a finished async agent
+# sitting in the chip for a quarter of an hour (10 Sep 2026).
+session="statusline-test-scrolled"
+sub="$proj/$session/subagents"
+mkdir -p "$sub"
+tp="$proj/$session.jsonl"
+mk_agent F claude-fable-5-1 high fable
+{
+  printf '{"type":"user","message":{"content":[{"tool_use_id":"toolu_F","type":"tool_result","content":[{"type":"text","text":"Async agent launched successfully. agentId: F"}]}]}}\n'
+  printf '{"type":"user","message":{"content":"<task-notification>\\n<task-id>F</task-id>\\n<tool-use-id>toolu_F</tool-use-id>\\n<status>completed</status>\\n</task-notification>"}}\n'
+  # Everything after the marker: enough of it to push the marker out of a small tail.
+  i=0
+  while [ "$i" -lt 200 ]; do
+    printf '{"type":"assistant","message":{"content":"padding padding padding padding padding padding padding padding"}}\n'
+    i=$((i + 1))
+  done
+} > "$tp"
+
+payload=$(cat <<JSON
+{"session_id":"$session","model":{"display_name":"Opus 5 (1M context)"},
+ "effort":{"level":"high"},"transcript_path":"$tp",
+ "context_window":{"used_percentage":6,"context_window_size":1000000},
+ "rate_limits":{"five_hour":{"used_percentage":40,"resets_at":$reset}}}
+JSON
+)
+# First render: the marker is still inside a generous tail, so F is seen to stop.
+out=$(printf '%s' "$payload" | CLAUDE_SUB_TAIL=2000000 sh "$SCRIPT")
+assert_not_contains "scrolled: marker inside the tail retires the agent" "$out" "F5.1"
+# Second render, tail now too small to reach the marker. Without the remembered
+# id, F comes back from the dead and the chip lies until the mtime floor.
+out=$(printf '%s' "$payload" | CLAUDE_SUB_TAIL=4000 sh "$SCRIPT")
+assert_not_contains "scrolled: marker outside the tail stays retired" "$out" "F5.1"
+assert_not_contains "scrolled: no chip left at all"                   "$out" "+{"
+
 # A session that never spawned anything renders no chip at all.
 session="statusline-test-no-subagents"
 tp="$proj/$session.jsonl"

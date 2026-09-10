@@ -1535,6 +1535,21 @@ fi
 # orphaned by a crash, may never get a marker, and with no cutoff it would sit in
 # the chip forever.
 #
+# A MARKER FOUND ONCE IS REMEMBERED, in /tmp beside the model cache. Only the
+# last $SUB_TAIL bytes of the parent transcript are scanned, and a marker does
+# not stay in that window: a busy session writes past it, the marker scrolls out,
+# and from that render on the scan can no longer see that the agent ever stopped.
+# It then reports the agent as live until the mtime floor eventually buries it —
+# fifteen minutes of a chip claiming a fan-out that finished long ago, which is
+# exactly the failure this bar exists to prevent (seen 10 Sep 2026: one async
+# agent, notified, its five <tool-use-id> markers sitting 2.2 MB from the end of
+# a 7.6 MB transcript with a 2 MB tail). Raising $SUB_TAIL only moves the
+# threshold — any fixed window is outrun by a long enough session — so the answer
+# is to write the id down the first time it is seen and never re-derive it.
+# Markers are monotonic, which is what makes this safe to cache: an agent that
+# returned does not un-return. The one exception is the resumed agent below, and
+# that case was already counted as done before any of this.
+#
 # KNOWN LIMIT: an async agent RESUMED with SendMessage after it already notified
 # once counts as done, because its original toolUseId keeps the marker it earned
 # at the first stop. Undoing that needs the marker's timestamp compared against
@@ -1580,15 +1595,23 @@ EOF
   fi
   _running=""
   if [ -n "$_meta" ]; then
+    # Ids already known to be finished, from earlier renders of THIS session.
+    _done_file="/tmp/claude-statusline-agentdone-v1-${sid}.txt"
+    _done=""
+    [ -r "$_done_file" ] && _done=$(cat "$_done_file" 2>/dev/null)
     # Through the environment, not -v: an awk -v assignment is a single line
     # and runs backslash escapes over the value, and this one is a table.
-    _running=$(tail -c "$SUB_TAIL" "$tp" 2>/dev/null | _meta="$_meta" awk '
+    # Two kinds of line come back: "R <id> <alias>" for an agent still running,
+    # "D <toolUseId>" for a marker seen on THIS pass and not yet remembered.
+    _scan=$(tail -c "$SUB_TAIL" "$tp" 2>/dev/null | _meta="$_meta" _done="$_done" awk '
       BEGIN {
         n = split(ENVIRON["_meta"], rows, "\n")
         for (i = 1; i <= n; i++) {
           split(rows[i], f, " ")
           if (f[2] != "") { live[f[2]] = f[1]; alias[f[1]] = f[3] }
         }
+        n = split(ENVIRON["_done"], d, "\n")
+        for (i = 1; i <= n; i++) if (d[i] != "" && (d[i] in live)) delete live[d[i]]
       }
       {
         n = split($0, parts, /"tool_use_id":"/)
@@ -1596,16 +1619,26 @@ EOF
           p = parts[i]; q = index(p, "\""); if (q < 2) continue
           id = substr(p, 1, q - 1)
           # A launch receipt is not a return value.
-          if ((id in live) && index(p, "Async agent launched successfully") == 0) delete live[id]
+          if ((id in live) && index(p, "Async agent launched successfully") == 0) { fresh[id] = 1; delete live[id] }
         }
         n = split($0, g, /<tool-use-id>/)
         for (i = 2; i <= n; i++) {
           q = index(g[i], "<"); if (q < 2) continue
           id = substr(g[i], 1, q - 1)
-          if (id in live) delete live[id]
+          if (id in live) { fresh[id] = 1; delete live[id] }
         }
       }
-      END { for (t in live) print live[t] " " alias[live[t]] }')
+      END {
+        for (t in fresh) print "D " t
+        for (t in live)  print "R " live[t] " " alias[live[t]]
+      }')
+    _running=$(printf '%s\n' "$_scan" | sed -n 's/^R //p')
+    # Append rather than rewrite: an id is only ever reported once (the next
+    # render finds it in the cache and drops it before the scan), so the file
+    # grows by one line per agent and never repeats itself. A failed write costs
+    # nothing but the old behaviour.
+    _newly_done=$(printf '%s\n' "$_scan" | sed -n 's/^D //p')
+    [ -n "$_newly_done" ] && { printf '%s\n' "$_newly_done" >> "$_done_file"; } 2>/dev/null
   fi
   if [ -n "$_running" ]; then
     # Model and effort never change for a given agent, so they are resolved once
