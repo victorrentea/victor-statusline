@@ -26,13 +26,13 @@ blooms `·` → `✢` → `✳` → `✻` → `✽` and closes again, one frame 
 same spinner Claude Code draws in front of "Working…"):
 
 ```
-Opus 5xh 50K | ↗98% / 4h47 | ✻0.5 ⊂ $25 | ai | (+24)70% / 1d1h
+Opus 5xh 50K ↗98% / 4h47 ✻0.5 ⊂ $25 ai | (+24)70% / 1d1h
 ```
 
 Idle, waiting on you (note the ticking "-N" clock and no flower):
 
 ```
-Opus 5xh 50K | 98% / 4h47 | $0.1 -3m ⊂ $25 | ai | (+24)70% / 1d1h
+Opus 5xh 50K 98% / 4h47 $0.1 -3m ⊂ $25 ai | (+24)70% / 1d1h
 ```
 
 Just after you hit Enter, before the first response has billed anything — **no
@@ -73,9 +73,12 @@ Opus 5h 60% / 3h22 ai (-6)0%💤 → Fri 17:08 / 7h
 ```
 
 Five segments: **model/effort/context**, **5h quota + burn-rate**, **spend**,
-**location**, **7-day quota** — `|`-separated, except around the location, whose
-colour chip is its own separator (§5). There is **no leading emoji** on the
-model segment.
+**location**, **7-day quota**. Two of them — the 5h quota and the location — sit
+on a **colour chip**, a painted background block, and a chip is its own
+separator: those cells have no `|` around them, only a space. The result is a
+**zebra**, plain / chipped / plain / chipped / plain, which the eye sorts before
+it has resolved a single glyph. There is **no leading emoji** on the model
+segment.
 
 **The order is by how fast each figure moves.** The model line is fixed; the 5h
 window and the spend move within a single turn; the folder changes when you
@@ -83,12 +86,12 @@ window and the spend move within a single turn; the folder changes when you
 as soon as you have what you came for — and the most static segment is the one
 that falls off the right edge first on a narrow terminal.
 
-**`|` separates segments; `/` joins readings of the *same* window** — the 5h
-pair `↗98% / 4h47`, and the weekly triple `(+24)70% / 1d1h` (pace, then
+**`|` separates *unpainted* segments; `/` joins readings of the *same* window**
+— the 5h pair `↗98% / 4h47`, and the weekly triple `(+24)70% / 1d1h` (pace, then
 what's left, then how long the window has to run). It also buys back a couple of
 columns per join versus a wordier separator. The pipe is there because two runs
 of plain text a space apart read as one run; where a segment is painted, it has
-nothing left to do — which is why the location has none (§5).
+nothing left to do — which is why neither chipped cell carries one (§2, §5).
 
 ---
 
@@ -383,7 +386,36 @@ Tracks the rolling **5-hour** rate-limit window.
 | `98%` | quota remaining = `100 − used%` | `.rate_limits.five_hour.used_percentage` |
 | `4h47` | time until the window resets (`HhMM`, or `Mm` under an hour) | `.rate_limits.five_hour.resets_at` |
 
-The `%` turns **orange < 15%** and **red < 5%**.
+### The cell sits on a chip, and the chip is what warns
+
+The whole cell is painted on a **colour chip** — the second one in the bar,
+alongside the folder's (§5) — and so it carries **no `|` on either side**; a
+space and the chip's own edge do the separating. That is what makes the bar a
+zebra rather than a pipe-fence.
+
+The ground is **dark, in the window's own blue-grey family** (`60`, `#5f5f87`,
+one step up from Nord polar night `#2e3440`), with the text left **light** on
+it. A *pale* chip with dark text was tried first — the inverse of what shipped —
+and it read as violent: this cell sits mid-bar, it is on screen every second of
+every session, and a pale block there pulled the eye to it before anything the
+eye was actually looking for. The folder chip is the loud one **on purpose**: it
+changes per folder, so it has to be told apart from nineteen others. This one
+never changes, so it only has to be *found*.
+
+**Low quota is a change of ground, not of digits.** The block goes **dark amber
+(`94`) under 15%** and **dark maroon (`88`) under 5%**, text staying `231`
+throughout. It used to paint the two figures orange/red instead, and that never
+actually worked: `↗98%` already ends in a colour reset from the arrow, so the
+wrapping colour died before it reached the number it was meant to warn about. A
+ground cannot be cancelled from the inside, and it changes the whole cell at a
+glance rather than two digits within it.
+
+Everything drawn *inside* the chip — the arrow, the `💤`, the stale `?` — carries
+the ground along with its own colour and returns to the chip rather than to a
+reset, because a reset would punch a hole straight through the block. The hues
+are the bar's usual green/orange/red (they were tuned for a dark terminal, and
+this ground *is* a dark terminal); only the grey climbs, `244` → `248`, since
+`244` on a lifted ground stops reading as muted and starts reading as dim.
 
 **There is no `left` label any more, on either figure.** The word used to trail
 the pair (`98% / 4h47 left`), on the argument that one label could cover both
@@ -393,7 +425,8 @@ that only counts down are both self-evidently remainders, and the word never
 once resolved a real ambiguity. What it did do was cost five columns and wedge a
 word between the segment and the next `|`, on the segment that changes fastest
 and gets read most. Dropped in both shapes — with a countdown (`98% / 4h47`) and
-without it (`98%`).
+without it (`98%`). `/` is now the only separator left inside the cell; where the
+cell itself ends is said by the chip's edge.
 
 **The countdown is a duration, not a clock time.** `1h23`, not `1:23`. A colon
 is how a wall clock is written, and this segment *has* a wall clock in it (the
@@ -1065,13 +1098,14 @@ The chip is the one painted thing in this segment; a coloured tail hanging off
 it read as a second highlight competing with the folder name.
 
 **No `|` on either side of it.** The pipe earns its place between plain-text
-cells, which would otherwise run together; the folder is never plain text —
+cells, which would otherwise run together; a chipped cell is never plain text —
 the chip's own edges are a harder boundary than a pipe ever was. Carrying both
 made the eye cross four separators (pipe, chip edge, chip edge, pipe) to read
 one word. A single space on each side is all the air the chip needs, so the
 segment now reads `⊂ $3.0 victor-skills (-16)25%`. The pipe returns only when
 there is no location at all, since then the neighbours really are two runs of
-plain text.
+plain text. This was the first cell to drop its pipes on that argument; the 5h
+quota (§2) followed, and the two of them together are the bar's zebra.
 
 | cwd | Segment |
 |-----|---------|
@@ -1839,6 +1873,56 @@ fi
 
 if [ -n "$five" ]; then
   left=$(printf '%.0f' "$(echo "100 - $five" | bc -l)")
+  # --- The quota chip: this cell's own background block ----------------------
+  # Same move as the folder chip further down, and for the same reason: a
+  # painted block is a harder edge than a pipe, so the two pipes that used to
+  # fence this cell off are gone and a single space on each side does the job.
+  # With the folder already chipped, chipping this one turns the bar into a
+  # ZEBRA -- model, [chip], spend, [chip], weekly -- and alternating ground is
+  # something the eye sorts before it has read a single glyph, which is exactly
+  # what a status bar wants from its separators.
+  #
+  # The ground is DARK and light text stays light, unlike the folder chip's pale
+  # half. A pale block here was tried first and read as violent: it lands in the
+  # middle of the bar, it is on screen every second of every session, and the
+  # eye kept going to it instead of to the thing it was actually looking for.
+  # 60 (#5f5f87) is one step up from the window's own polar night (#2e3440) in
+  # the same blue-grey family -- close enough to sit quietly, far enough to
+  # still read as a block. The folder chip is the loud one BY DESIGN (it changes
+  # per folder, so it has to be told apart from nineteen others); this one never
+  # changes, so it only has to be found.
+  #
+  # The ground carries the low-quota alarm, staying dark as it does so.
+  # Painting the digits red inside the cell is the weaker signal of the two, and
+  # it never worked anyway: $pct_part already ends in a colour reset from the
+  # arrow, so the wrapping red died before it reached the number it was meant to
+  # warn about. Moving the alarm to the background fixes that by construction --
+  # no inner sequence can cancel a ground -- and the whole cell changes colour at
+  # a glance instead of two digits inside it.
+  #   >=15%  slate blue-grey (60) -- calm, the steady state, matched to the window
+  #   <15%   dark amber      (94) -- spend it more slowly
+  #   <5%    dark maroon     (88) -- about to run out
+  # Text stays 231 on all three: the alarm is the hue of the block, not a
+  # second thing to read.
+  _qbg=60
+  if [ "$left" -lt 5 ] 2>/dev/null; then
+    _qbg=88
+  elif [ "$left" -lt 15 ] 2>/dev/null; then
+    _qbg=94
+  fi
+  # Every colour used INSIDE the chip carries the ground with it, and "back to
+  # normal" means back to $QCHIP, never $RESET: a reset punches a hole straight
+  # through the block, and the arrow, the 💤 and the stale "?" all sit in the
+  # middle of it. The hues are the bar's usual green/orange/red -- they were
+  # tuned for a dark terminal and this ground is a dark terminal -- except the
+  # grey, which climbs from 244 to 248 because 244 on a lifted ground is no
+  # longer muted, it is merely dim.
+  _qb="${ESC}[48;5;${_qbg}m"
+  QCHIP="${_qb}${ESC}[38;5;231m"
+  QGREEN="${_qb}${ESC}[38;5;78m"
+  QORANGE="${_qb}${ESC}[38;5;208m"
+  QRED="${_qb}${ESC}[38;5;203m"
+  QGREY="${_qb}${ESC}[38;5;248m"
   ind=""
   dur=""
   until_time=""
@@ -1876,9 +1960,9 @@ if [ -n "$five" ]; then
       }')
       # Color the burn-rate arrow: up/surplus green, mild deficit orange, hard deficit red.
       case "$ind" in
-        "↑"|"↗") ind="${GREEN}${ind}${RESET}" ;;
-        "↘")     ind="${ORANGE}${ind}${RESET}" ;;
-        "↓")     ind="${RED}${ind}${RESET}" ;;
+        "↑"|"↗") ind="${QGREEN}${ind}${QCHIP}" ;;
+        "↘")     ind="${QORANGE}${ind}${QCHIP}" ;;
+        "↓")     ind="${QRED}${ind}${QCHIP}" ;;
       esac
     fi
   fi
@@ -1897,13 +1981,14 @@ if [ -n "$five" ]; then
   # figure is still the best one available and is still shown; what it loses is
   # the right to be believed.
   if [ -n "$five_age" ] && [ "$five_age" -gt "$STALE_5H" ] 2>/dev/null; then
-    pct_part="${GREY}${left}%?${RESET}"
+    pct_part="${QGREY}${left}%?${QCHIP}"
   else
     pct_part="${ind}${left}%"
   fi
   # "↗98% / 1h23": quota-left and time-left are two readings of the SAME
-  # window, joined with "/" rather than the "•" it replaces; "|" stays reserved
-  # for segment boundaries, so the eye still parses where the segment ends.
+  # window, joined with "/" rather than the "•" it replaces. "/" is the only
+  # separator inside the cell; where the cell itself ends is said by the chip's
+  # edge, which is why there is no pipe around it any more.
   #
   # The word "left" used to trail the pair, on the argument that one label could
   # cover both figures. It could -- and it was still dead weight. Neither figure
@@ -1946,8 +2031,8 @@ if [ -n "$five" ]; then
     if [ -n "$pwake" ]; then
       pclock=$(date -r "$pwake" +%H:%M 2>/dev/null)
       if [ -n "$pclock" ]; then
-        sleep_mark="${ORANGE}💤${RESET}"
-        sleep_tail=" ${ORANGE}→ ${pclock}${RESET}"
+        sleep_mark="${QORANGE}💤${QCHIP}"
+        sleep_tail=" ${QORANGE}→ ${pclock}${QCHIP}"
       else
         pleft=$((pwake - pnow))
         ph=$((pleft / 3600))
@@ -1960,31 +2045,28 @@ if [ -n "$five" ]; then
           # Sub-minute: "0m" reads as "stuck", "<1m" reads as "about to wake".
           pfmt="<1m"
         fi
-        sleep_mark="${ORANGE}💤${pfmt}${RESET}"
+        sleep_mark="${QORANGE}💤${pfmt}${QCHIP}"
       fi
     fi
   fi
-  # The low-quota colour is painted onto the two figures themselves rather than
-  # around the whole segment, because the segment is no longer one run of text:
-  # the 💤 and the wake clock carry their own colour, and wrapping the lot would
-  # end at their RESET and leave the tail of the line uncoloured.
-  qcol=""
-  if [ "$left" -lt 5 ]; then
-    qcol="$RED"
-  elif [ "$left" -lt 15 ]; then
-    qcol="$ORANGE"
-  fi
-  if [ -n "$qcol" ]; then
-    pct_part="${qcol}${pct_part}${RESET}"
-    [ -n "$dur" ] && dur="${qcol}${dur}${RESET}"
-  fi
+  # Low quota is painted by the CHIP'S GROUND, chosen with $_qbg above -- there
+  # is no per-figure colouring left here. The old shape wrapped $pct_part and
+  # $dur in red, and it could not work: both already end in a colour reset (the
+  # arrow's, the 💤's), so the wrapping colour was cancelled before it reached
+  # the digits. A ground cannot be cancelled from the inside, and it warns
+  # across the whole cell instead of two characters within it.
   if [ -n "$dur" ]; then
     body="${pct_part}${sleep_mark} / ${dur}${sleep_tail}"
   else
     body="${pct_part}${sleep_mark}${sleep_tail}"
   fi
-  five_str="${body}"
-  out="$out | $five_str"
+  five_str="${QCHIP}${body}${RESET}"
+  # A space on each side, no pipes: the chip's own edges already say where the
+  # cell starts and stops (same argument as the folder chip). The trailing space
+  # is handed to whoever comes next through $_five_sep, so the pipe comes back
+  # by itself on the days this cell is missing entirely.
+  out="$out $five_str"
+  _five_sep=' '
 fi
 
 # Session spend, broken down as: last turn + session total, each with its token count.
@@ -2587,7 +2669,7 @@ if [ -n "$spend_ready" ]; then
 fi
 
 if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
-  out="$out | $spend_seg"
+  out="$out${_five_sep:- | }$spend_seg"
 fi
 
 # --- Weekly quota, last cell of the bar: "(+6)27% / 1wd1h"
@@ -2912,10 +2994,11 @@ fi
 # name, so the branch now uses the bar's default foreground like every other
 # figure on the line, and the eye goes straight to the chip.
 #
-# NO " | " ON EITHER SIDE. Every other cell needs the pipe because two runs of
-# plain text with only a space between them read as one run; the folder does
-# not, because it is the one segment carrying a background colour, and a
-# coloured block is already a harder edge than a pipe ever was. Keeping both
+# NO " | " ON EITHER SIDE. A cell of plain text needs the pipe, because two such
+# runs with only a space between them read as one run; a chipped cell does not,
+# because a coloured block is already a harder edge than a pipe ever was. The
+# folder was the first cell to drop its pipes on that argument and the 5h quota
+# followed, which is what gives the bar its zebra. Keeping both
 # meant the eye crossed three separators — pipe, chip edge, chip edge, pipe —
 # to read one word. A single space on each side is enough air around the chip;
 # the pipes are what the chip replaced.

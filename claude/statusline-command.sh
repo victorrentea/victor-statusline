@@ -367,6 +367,56 @@ fi
 
 if [ -n "$five" ]; then
   left=$(printf '%.0f' "$(echo "100 - $five" | bc -l)")
+  # --- The quota chip: this cell's own background block ----------------------
+  # Same move as the folder chip further down, and for the same reason: a
+  # painted block is a harder edge than a pipe, so the two pipes that used to
+  # fence this cell off are gone and a single space on each side does the job.
+  # With the folder already chipped, chipping this one turns the bar into a
+  # ZEBRA -- model, [chip], spend, [chip], weekly -- and alternating ground is
+  # something the eye sorts before it has read a single glyph, which is exactly
+  # what a status bar wants from its separators.
+  #
+  # The ground is DARK and light text stays light, unlike the folder chip's pale
+  # half. A pale block here was tried first and read as violent: it lands in the
+  # middle of the bar, it is on screen every second of every session, and the
+  # eye kept going to it instead of to the thing it was actually looking for.
+  # 60 (#5f5f87) is one step up from the window's own polar night (#2e3440) in
+  # the same blue-grey family -- close enough to sit quietly, far enough to
+  # still read as a block. The folder chip is the loud one BY DESIGN (it changes
+  # per folder, so it has to be told apart from nineteen others); this one never
+  # changes, so it only has to be found.
+  #
+  # The ground carries the low-quota alarm, staying dark as it does so.
+  # Painting the digits red inside the cell is the weaker signal of the two, and
+  # it never worked anyway: $pct_part already ends in a colour reset from the
+  # arrow, so the wrapping red died before it reached the number it was meant to
+  # warn about. Moving the alarm to the background fixes that by construction --
+  # no inner sequence can cancel a ground -- and the whole cell changes colour at
+  # a glance instead of two digits inside it.
+  #   >=15%  slate blue-grey (60) -- calm, the steady state, matched to the window
+  #   <15%   dark amber      (94) -- spend it more slowly
+  #   <5%    dark maroon     (88) -- about to run out
+  # Text stays 231 on all three: the alarm is the hue of the block, not a
+  # second thing to read.
+  _qbg=60
+  if [ "$left" -lt 5 ] 2>/dev/null; then
+    _qbg=88
+  elif [ "$left" -lt 15 ] 2>/dev/null; then
+    _qbg=94
+  fi
+  # Every colour used INSIDE the chip carries the ground with it, and "back to
+  # normal" means back to $QCHIP, never $RESET: a reset punches a hole straight
+  # through the block, and the arrow, the 💤 and the stale "?" all sit in the
+  # middle of it. The hues are the bar's usual green/orange/red -- they were
+  # tuned for a dark terminal and this ground is a dark terminal -- except the
+  # grey, which climbs from 244 to 248 because 244 on a lifted ground is no
+  # longer muted, it is merely dim.
+  _qb="${ESC}[48;5;${_qbg}m"
+  QCHIP="${_qb}${ESC}[38;5;231m"
+  QGREEN="${_qb}${ESC}[38;5;78m"
+  QORANGE="${_qb}${ESC}[38;5;208m"
+  QRED="${_qb}${ESC}[38;5;203m"
+  QGREY="${_qb}${ESC}[38;5;248m"
   ind=""
   dur=""
   until_time=""
@@ -404,9 +454,9 @@ if [ -n "$five" ]; then
       }')
       # Color the burn-rate arrow: up/surplus green, mild deficit orange, hard deficit red.
       case "$ind" in
-        "↑"|"↗") ind="${GREEN}${ind}${RESET}" ;;
-        "↘")     ind="${ORANGE}${ind}${RESET}" ;;
-        "↓")     ind="${RED}${ind}${RESET}" ;;
+        "↑"|"↗") ind="${QGREEN}${ind}${QCHIP}" ;;
+        "↘")     ind="${QORANGE}${ind}${QCHIP}" ;;
+        "↓")     ind="${QRED}${ind}${QCHIP}" ;;
       esac
     fi
   fi
@@ -425,13 +475,14 @@ if [ -n "$five" ]; then
   # figure is still the best one available and is still shown; what it loses is
   # the right to be believed.
   if [ -n "$five_age" ] && [ "$five_age" -gt "$STALE_5H" ] 2>/dev/null; then
-    pct_part="${GREY}${left}%?${RESET}"
+    pct_part="${QGREY}${left}%?${QCHIP}"
   else
     pct_part="${ind}${left}%"
   fi
   # "↗98% / 1h23": quota-left and time-left are two readings of the SAME
-  # window, joined with "/" rather than the "•" it replaces; "|" stays reserved
-  # for segment boundaries, so the eye still parses where the segment ends.
+  # window, joined with "/" rather than the "•" it replaces. "/" is the only
+  # separator inside the cell; where the cell itself ends is said by the chip's
+  # edge, which is why there is no pipe around it any more.
   #
   # The word "left" used to trail the pair, on the argument that one label could
   # cover both figures. It could -- and it was still dead weight. Neither figure
@@ -474,8 +525,8 @@ if [ -n "$five" ]; then
     if [ -n "$pwake" ]; then
       pclock=$(date -r "$pwake" +%H:%M 2>/dev/null)
       if [ -n "$pclock" ]; then
-        sleep_mark="${ORANGE}💤${RESET}"
-        sleep_tail=" ${ORANGE}→ ${pclock}${RESET}"
+        sleep_mark="${QORANGE}💤${QCHIP}"
+        sleep_tail=" ${QORANGE}→ ${pclock}${QCHIP}"
       else
         pleft=$((pwake - pnow))
         ph=$((pleft / 3600))
@@ -488,31 +539,28 @@ if [ -n "$five" ]; then
           # Sub-minute: "0m" reads as "stuck", "<1m" reads as "about to wake".
           pfmt="<1m"
         fi
-        sleep_mark="${ORANGE}💤${pfmt}${RESET}"
+        sleep_mark="${QORANGE}💤${pfmt}${QCHIP}"
       fi
     fi
   fi
-  # The low-quota colour is painted onto the two figures themselves rather than
-  # around the whole segment, because the segment is no longer one run of text:
-  # the 💤 and the wake clock carry their own colour, and wrapping the lot would
-  # end at their RESET and leave the tail of the line uncoloured.
-  qcol=""
-  if [ "$left" -lt 5 ]; then
-    qcol="$RED"
-  elif [ "$left" -lt 15 ]; then
-    qcol="$ORANGE"
-  fi
-  if [ -n "$qcol" ]; then
-    pct_part="${qcol}${pct_part}${RESET}"
-    [ -n "$dur" ] && dur="${qcol}${dur}${RESET}"
-  fi
+  # Low quota is painted by the CHIP'S GROUND, chosen with $_qbg above -- there
+  # is no per-figure colouring left here. The old shape wrapped $pct_part and
+  # $dur in red, and it could not work: both already end in a colour reset (the
+  # arrow's, the 💤's), so the wrapping colour was cancelled before it reached
+  # the digits. A ground cannot be cancelled from the inside, and it warns
+  # across the whole cell instead of two characters within it.
   if [ -n "$dur" ]; then
     body="${pct_part}${sleep_mark} / ${dur}${sleep_tail}"
   else
     body="${pct_part}${sleep_mark}${sleep_tail}"
   fi
-  five_str="${body}"
-  out="$out | $five_str"
+  five_str="${QCHIP}${body}${RESET}"
+  # A space on each side, no pipes: the chip's own edges already say where the
+  # cell starts and stops (same argument as the folder chip). The trailing space
+  # is handed to whoever comes next through $_five_sep, so the pipe comes back
+  # by itself on the days this cell is missing entirely.
+  out="$out $five_str"
+  _five_sep=' '
 fi
 
 # Session spend, broken down as: last turn + session total, each with its token count.
@@ -1115,7 +1163,7 @@ if [ -n "$spend_ready" ]; then
 fi
 
 if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
-  out="$out | $spend_seg"
+  out="$out${_five_sep:- | }$spend_seg"
 fi
 
 # --- Weekly quota, last cell of the bar: "(+6)27% / 1wd1h"
@@ -1440,10 +1488,11 @@ fi
 # name, so the branch now uses the bar's default foreground like every other
 # figure on the line, and the eye goes straight to the chip.
 #
-# NO " | " ON EITHER SIDE. Every other cell needs the pipe because two runs of
-# plain text with only a space between them read as one run; the folder does
-# not, because it is the one segment carrying a background colour, and a
-# coloured block is already a harder edge than a pipe ever was. Keeping both
+# NO " | " ON EITHER SIDE. A cell of plain text needs the pipe, because two such
+# runs with only a space between them read as one run; a chipped cell does not,
+# because a coloured block is already a harder edge than a pipe ever was. The
+# folder was the first cell to drop its pipes on that argument and the 5h quota
+# followed, which is what gives the bar its zebra. Keeping both
 # meant the eye crossed three separators — pipe, chip edge, chip edge, pipe —
 # to read one word. A single space on each side is enough air around the chip;
 # the pipes are what the chip replaced.
