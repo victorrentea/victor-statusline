@@ -81,8 +81,11 @@ this repo:
 > Read `claude/victor-claude-statusline.md` and set me up an identical status
 > line: create `~/.claude/statusline-command.sh` exactly as in the doc,
 > `chmod +x` it, and wire the `statusLine` block into `~/.claude/settings.json`
-> (merge with the existing JSON, don't clobber it). Then verify by piping a
-> sample payload into the script.
+> (merge with the existing JSON, don't clobber it). Then install
+> `claude/hooks/quota-*.sh` into `~/.claude/hooks/` and wire the `hooks` block
+> from the "Install — by hand" section of `README.md` into the same
+> `settings.json`, so the terminal parks itself when quota runs out. Then verify
+> by piping a sample payload into the script.
 
 **Copilot CLI** — run `copilot` and paste:
 
@@ -105,6 +108,36 @@ then add to `~/.claude/settings.json`:
 }
 ```
 
+Copying the hook scripts is **not** enough to get the auto-suspend: nothing runs
+them until they are wired to the three events that precede an API request. Merge
+this into the same `settings.json` to park a terminal when the 5-hour window is
+nearly gone (default: under 5% left) or the weekly window is down to its last 1%
+— on a subscription; on an API key there are no quota figures to gate on and the
+hook exits immediately:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+    ],
+    "PreToolUse": [
+      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+    ],
+    "PostToolUse": [
+      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+    ]
+  }
+}
+```
+
+The `timeout` has to exceed the longest possible park — a full week plus the
+wake buffer — or Claude Code kills the hook mid-sleep and the request goes
+through anyway. `CLAUDE_QUOTA_GATE=0` disables the gate without unwiring it;
+§2 and §4 of the Claude doc explain the thresholds, the five-minute live probe
+and everything the bar draws while parked. Run `claude/test-quota-gate.sh` after
+wiring to see it park and release against fake state.
+
 ```sh
 # Copilot CLI
 install -m 755 copilot/statusline.sh    ~/.copilot/statusline.sh
@@ -125,7 +158,8 @@ then add the `statusLine` block from `copilot/victor-copilot-statusline.md`
   every five minutes, so a plan switch shows within minutes instead of at the
   next window reset), `quota-gate.sh` (parks a terminal on an exhausted
   window). Without them it still runs and degrades to its fallback heuristics;
-  the doc says exactly where.
+  the doc says exactly where. `quota-gate.sh` is the only one that needs its own
+  `hooks` entry in `settings.json` — copying the file does nothing on its own.
 - **Nothing here sets the session title**, deliberately: any hook that emits
   `sessionTitle` permanently suppresses Claude Code's own AI summary, which is
   also what `/resume` lists sessions by. §6 of the Claude doc has the evidence

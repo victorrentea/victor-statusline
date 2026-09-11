@@ -10,6 +10,14 @@ exact status bar to then polish):
 "statusLine": { "type": "command", "command": "/Users/victorrentea/.claude/statusline-command.sh", "refreshInterval": 1 }
 ```
 
+The bar has a sibling that is **not** a status line at all and is wired into the
+same file: `~/.claude/hooks/quota-gate.sh`, the request gate that suspends a
+terminal when the subscription's 5-hour or weekly window runs out and releases it
+when quota comes back. The bar only *draws* that state (`💤`, §2 and §4); the
+hook is what produces it, and it needs its own `hooks` entry — see
+"Wiring the gate" in §2. Both live in the repo this file ships from, under
+`claude/hooks/`.
+
 Claude Code pipes a JSON blob to the script's stdin on every render (once per
 second, `refreshInterval: 1`); the script prints one line. This file documents
 what that line means **and** the engineering lessons baked into the script.
@@ -522,6 +530,75 @@ already sleeping does not move its glyph to the weekly cell.
 on the first glyph of a segment, so that slot goes to the part you read *without
 parsing digits* — the trend — and the exact figure follows for when you actually
 care. Same principle drives the weekly segment (§4).
+
+### Wiring the gate
+
+The gate is not part of the status line and is not started by it. It is a hook,
+registered on the **three events that immediately precede an API request**:
+
+```json
+"hooks": {
+  "UserPromptSubmit": [
+    { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+  ],
+  "PreToolUse": [
+    { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+  ],
+  "PostToolUse": [
+    { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+  ]
+}
+```
+
+**Why all three, when one would "work".** A hook can only hold a request that
+has not been sent yet, and a turn can reach the next request from three
+different places. `PostToolUse` is the tightest of them — the tool result is
+already in hand and the very next thing that happens is a request carrying it,
+so parking there wastes nothing. `PreToolUse` is the one that keeps a ten-minute
+build or a `git push` from being launched a second before the window closes, only
+to have its result sit unusable until the reset. `UserPromptSubmit` covers the
+turn that ended in plain text, where there is no tool call to hang either of the
+other two on. Registering only `UserPromptSubmit` — the obvious single choice —
+gates the *start* of a turn and then lets a fifty-tool-call agentic run burn
+through the boundary uninterrupted.
+
+The hook takes no matcher: every tool, every prompt. It drains stdin, reads the
+shared quota state (§"Cross-terminal quota state"), and either exits in
+milliseconds or sleeps — so the cost of having it on all three events is three
+`sh` startups per tool round-trip, not three probes.
+
+**The timeout is the mechanism, not a safety margin.** `605040` seconds is a
+week plus four minutes, and it has to cover the *whole* park, because Claude
+Code kills a hook that overruns its timeout and then proceeds with the request
+— precisely the outcome the gate exists to prevent. The figure is not the length
+of one `sleep`: a weekly park sleeps in ~5-minute hops between live probes (§4),
+but it is **one hook process looping**, so what the timeout has to outlast is
+the sum — up to a full weekly window. Left at the 60-second default, an
+exhausted terminal would pause for a minute and then 429. The gate's own
+`CLAUDE_QUOTA_MAX_SLEEP` (`604920` — the same week, two minutes less) is the
+matching ceiling on the other side: a wake computed beyond it is declined and
+logged rather than slept through, so the hook can never outlive its own
+timeout.
+
+`statusMessage` is what Claude Code shows while the hook blocks; without it the
+terminal looks hung during a park, which is the same failure the `💤` glyph
+solves inside the bar.
+
+**Switches.** `CLAUDE_QUOTA_GATE=0` disables the gate without unwiring it —
+useful when a long unattended run is *meant* to fail fast rather than sit for
+five hours. `CLAUDE_QUOTA_MIN_PCT` (5) and `CLAUDE_WEEKLY_QUOTA_MIN_PCT` (1) are
+the thresholds, `CLAUDE_QUOTA_PROBE_SECS` (300) the live re-check interval while
+parked on the weekly window (§4).
+
+**On an API key there is nothing to gate.** The quota windows only exist on a
+subscription; on an API key Claude Code sends `rate_limits: null` (the schema
+says so in as many words), the state read yields no usable percentage, and the
+hook exits `0` on its first pass — the same input that makes the bar drop both
+quota segments entirely.
+
+`claude/test-quota-gate.sh` in the repo drives the gate against fabricated
+state — exhausted, nearly-exhausted, released-by-probe — so the wiring can be
+verified without waiting for a real window to close.
 
 ### Burn-rate indicator
 
