@@ -128,8 +128,8 @@ assert_not_contains "weekly parked: five-hour percentage stays awake" "$out" "60
 
 # --- Case 5: a live weekly probe outranks a frozen session payload ----------
 # Plan boosts can return allowance without changing the advertised reset. The
-# status line must show the authenticated probe result for the same hour instead
-# of the session's stale 101%-used payload.
+# status line must show the authenticated probe result for the same polling
+# interval instead of the session's stale 101%-used payload.
 session="statusline-test-weekly-probe"
 printf '%s 0 %s' "$now" "$week_reset" > "$HOME/.claude/quota-weekly-probe"
 payload=$(cat <<JSON
@@ -142,6 +142,20 @@ JSON
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
 assert_contains "weekly probe: live allowance replaces stale exhausted value" "$out" "100%"
 assert_not_contains "weekly probe: stale negative percentage is gone" "$out" "-1%"
+
+# Once the five-minute polling interval has elapsed, the renderer must stop
+# treating the old probe as authoritative; the gate will fetch a new one before
+# allowing the next request.
+printf '%s 0 %s' "$((now - 301))" "$week_reset" > "$HOME/.claude/quota-weekly-probe"
+payload=$(cat <<JSON
+{"session_id":"statusline-test-weekly-probe-expired","model":{"display_name":"Claude Opus"},
+ "context_window":{},
+ "rate_limits":{"five_hour":{"used_percentage":40,"resets_at":$reset},
+                "seven_day":{"used_percentage":101,"resets_at":$week_reset}}}
+JSON
+)
+out=$(printf '%s' "$payload" | env -u CLAUDE_WEEKLY_QUOTA_PROBE_SECS sh "$SCRIPT")
+assert_not_contains "weekly probe: default authority expires after five minutes" "$out" "100%"
 
 # A failed network attempt writes only its timestamp. That partial record is a
 # retry throttle, not quota data, and must never replace the session percentage.

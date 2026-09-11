@@ -1,7 +1,7 @@
 #!/bin/sh
 # Park this terminal when the 5h quota is nearly gone or the weekly quota has
 # 1% or less left. The 5h gate wakes at its reset; the weekly gate also probes
-# Claude's live usage endpoint once an hour, so an early reset or plan boost can
+# Claude's live usage endpoint every five minutes, so an early reset or plan boost can
 # release unattended work without trusting a stale advertised reset.
 #
 # Wired to UserPromptSubmit, PreToolUse and PostToolUse: those are the three
@@ -11,14 +11,14 @@
 # plain text.
 #
 # `rate_limits` in the hook payload is cached, so it cannot itself discover a
-# mid-window allowance change while every request is parked. The hourly probe
+# mid-window allowance change while every request is parked. The periodic probe
 # calls the same authenticated usage endpoint as Claude Code's Usage screen and
 # republishes its seven-day reading into the shared quota state. A machine-wide
 # attempt timestamp prevents every parked terminal from probing independently.
 #
 # Env knobs: CLAUDE_QUOTA_MIN_PCT (default 5),
 # CLAUDE_WEEKLY_QUOTA_MIN_PCT (default 1), CLAUDE_QUOTA_MAX_SLEEP (604920),
-# CLAUDE_WEEKLY_QUOTA_PROBE_SECS (default 3600),
+# CLAUDE_WEEKLY_QUOTA_PROBE_SECS (default 300),
 # CLAUDE_QUOTA_GATE=0 to disable.
 
 INPUT=$(cat)                       # always drain stdin, else the writer gets SIGPIPE
@@ -28,12 +28,12 @@ INPUT=$(cat)                       # always drain stdin, else the writer gets SI
 THRESH="${CLAUDE_QUOTA_MIN_PCT:-5}"
 WEEK_THRESH="${CLAUDE_WEEKLY_QUOTA_MIN_PCT:-1}"
 MAXSLEEP="${CLAUDE_QUOTA_MAX_SLEEP:-604920}"
-PROBE_SECS="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-3600}"
+PROBE_SECS="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-300}"
 LOG="$HOME/.claude/quota-gate.log"
 PARKDIR="$HOME/.claude/quota-park"
 PROBE_STAMP="${CLAUDE_WEEKLY_QUOTA_PROBE_FILE:-$HOME/.claude/quota-weekly-probe}"
 
-case "$PROBE_SECS" in ''|*[!0-9]*|0) PROBE_SECS=3600 ;; esac
+case "$PROBE_SECS" in ''|*[!0-9]*|0) PROBE_SECS=300 ;; esac
 
 iso_to_epoch() {
   # macOS date(1) cannot parse fractional seconds or the colon in +00:00.
@@ -107,11 +107,11 @@ while :; do
   esac
 
   # A low cached weekly reading is rechecked live once the shared attempt clock
-  # is an hour old. `measured_at` is deliberately irrelevant here: a restarted
+  # is five minutes old. `measured_at` is deliberately irrelevant here: a restarted
   # status line can mistake its first frozen payload for a new API response.
   # Writing the attempt before curl makes concurrent sleepers converge on the
   # same next deadline even when the network request fails. A successful result
-  # stays in the same file so all hooks trust it until the next hourly probe.
+  # stays in the same file so all hooks trust it until the next periodic probe.
   if [ "$go7" = 1 ]; then
     probe_record=$(sed -n '1p' "$PROBE_STAMP" 2>/dev/null)
     probe_last="" probe_cached_used="" probe_cached_reset=""

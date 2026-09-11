@@ -147,7 +147,7 @@ fi
 
 # A successful authenticated weekly probe is stronger evidence than any
 # session's frozen rate_limits payload. Keep its result authoritative for the
-# same hour the request gate uses before probing again; this also prevents a
+# same five-minute interval the request gate uses before probing again; this also prevents a
 # restarted status line from immediately repainting a returned allowance as the
 # old cached 101%-used value.
 probe_record=$(sed -n '1p' "$HOME/.claude/quota-weekly-probe" 2>/dev/null)
@@ -155,8 +155,8 @@ probe_at="" probe_week="" probe_reset=""
 IFS=' ' read -r probe_at probe_week probe_reset <<EOF
 $probe_record
 EOF
-probe_secs="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-3600}"
-case "$probe_secs" in ''|*[!0-9]*|0) probe_secs=3600 ;; esac
+probe_secs="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-300}"
+case "$probe_secs" in ''|*[!0-9]*|0) probe_secs=300 ;; esac
 case "$probe_at:$probe_week:$probe_reset" in
   *[!0-9.:]*|*::*|:*|*:) ;;
   *)
@@ -1190,8 +1190,8 @@ if [ -n "$week" ]; then
   fi
 
   # A weekly park belongs on the weekly percentage, never on the healthy 5h
-  # figure. Include the weekday so the next hourly probe remains unambiguous
-  # around midnight; a bare clock is sufficient inside a five-hour window.
+  # figure. Include the weekday so the probe deadline remains unambiguous next
+  # to a potentially multi-day weekly reset; a bare clock suffices for 5h.
   if [ "$park_window" = seven_day ]; then
     week_wake=$(date -r "$park_wake" '+%a %H:%M' 2>/dev/null)
     week_sleep="${ORANGE}💤${RESET}"

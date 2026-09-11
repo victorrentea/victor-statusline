@@ -91,8 +91,30 @@ now=$(date +%s)
 five_reset=$((now + 1800))
 week_reset=$((now + 7200))
 
-# Weekly quota at exactly 1% left parks only until the next hourly live probe,
-# not blindly until the advertised weekly reset.
+# The default retry cadence is deliberately short enough to notice an account
+# upgrade without leaving every Claude request parked for the rest of an hour.
+session=quota-gate-test-default-probe-cadence
+probe_calls="$TMP/weekly-default-probe.calls"
+write_state 88 "$five_reset" "$now" 99 "$week_reset" "$now"
+printf '{"session_id":"%s"}' "$session" \
+  | env -u CLAUDE_WEEKLY_QUOTA_PROBE_SECS \
+      CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-default-probe.stamp" \
+      CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
+      CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
+      CLAUDE_TEST_PROBE_USED=99 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE" \
+      >/dev/null 2>&1 &
+gate_pid=$!
+marker="$HOME/.claude/quota-park/$session"
+wait_for_marker "$marker"
+contents=$(sed -n '1p' "$marker" 2>/dev/null)
+default_wake=$(printf '%s' "$contents" | cut -d' ' -f1)
+assert_between "weekly: default live probe cadence is five minutes" \
+  "$default_wake" "$((now + 299))" "$((now + 305))"
+stop_gate
+
+# An explicit hourly override remains supported: weekly quota at exactly 1%
+# left parks only until that configured probe, not the advertised reset.
 session=quota-gate-test-weekly
 probe_calls="$TMP/weekly-first-probe.calls"
 write_state 88 "$five_reset" "$now" 99 "$week_reset" "$now"
@@ -112,7 +134,7 @@ weekly_wake=$(printf '%s' "$contents" | cut -d' ' -f1)
 weekly_window=$(printf '%s' "$contents" | cut -d' ' -f2)
 assert_eq "weekly: one percent left parks on the seven-day window" \
   "$weekly_window" "seven_day"
-assert_between "weekly: park ends at the next hourly probe" \
+assert_between "weekly: configured hourly probe sets the park deadline" \
   "$weekly_wake" "$((now + 3599))" "$((now + 3605))"
 assert_eq "weekly: no prior real probe means probe immediately" \
   "$(line_count "$probe_calls")" "1"
@@ -138,7 +160,7 @@ else
   fail=$((fail + 1)); printf 'FAIL  weekly: a mid-window quota return releases the request\n'
 fi
 
-# Until the next hour, every other hook must reuse that live "quota available"
+# Until the configured hour, every other hook must reuse that live "quota available"
 # result instead of either probing again or trusting a newly repinned stale 101.
 session=quota-gate-test-weekly-reset-cached
 write_state 88 "$five_reset" "$now" 101 "$week_reset" "$now"
@@ -158,7 +180,7 @@ if ! kill -0 "$gate_pid" 2>/dev/null && [ ! -f "$marker" ]; then
 else
   fail=$((fail + 1)); printf 'FAIL  weekly: fresh available probe result overrides a repinned stale cache\n'
 fi
-assert_eq "weekly: live usage is probed at most once per hour" \
+assert_eq "weekly: hourly override probes at most once per hour" \
   "$(line_count "$probe_calls")" "1"
 stop_gate
 
@@ -176,8 +198,8 @@ assert_eq "five-hour: existing low-quota path still parks" \
   "$contents" "$five_reset five_hour"
 stop_gate
 
-# If both limits are exhausted, the hourly weekly probe is the first point at
-# which the combined gate might clear (the 5h reset below happens sooner).
+# If both limits are exhausted, the configured hourly weekly probe is the first
+# point at which the combined gate might clear (the 5h reset happens sooner).
 session=quota-gate-test-both
 probe_calls="$TMP/weekly-both-probe.calls"
 write_state 96 "$five_reset" "$now" 99 "$week_reset" "$now"
@@ -197,7 +219,7 @@ both_wake=$(printf '%s' "$contents" | cut -d' ' -f1)
 both_window=$(printf '%s' "$contents" | cut -d' ' -f2)
 assert_eq "both: weekly quota remains the limiting window" \
   "$both_window" "seven_day"
-assert_between "both: weekly quota is reprobed hourly" \
+assert_between "both: configured weekly probe remains hourly" \
   "$both_wake" "$((now + 3599))" "$((now + 3605))"
 stop_gate
 

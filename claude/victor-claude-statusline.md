@@ -65,8 +65,8 @@ Opus 5h 3%💤 / 4h51 → 21:15 | ai | (+15)82% / 3wd8h
 ```
 
 The same gate also parks at **1% or less weekly quota**, but marks the weekly
-cell instead. Its wake clock is the next hourly live quota probe, not a blind
-multi-day sleep to the cached reset:
+cell instead. Its wake clock is the next five-minute live quota probe, not a
+blind multi-day sleep to the cached reset:
 
 ```
 Opus 5h 60% / 3h22 ai (-6)0%💤 → Fri 17:08 / 7h
@@ -1081,27 +1081,27 @@ says when the gate will check again; `/ 7h` says how much working time the cache
 window claims remains.
 
 A cached low weekly reading is actionable, but no longer trusted for one long
-sleep. The observed counterexample was a temporary plan boost: the shared cache
-still said `101%` used and reset Monday at 00:00 while Claude's Usage screen said
-`0%` used in the same advertised window. `CLAUDE_WEEKLY_QUOTA_PROBE_SECS`
-therefore defaults to `3600`. At that interval the parked hook calls Claude's
-authenticated `/api/oauth/usage` endpoint, republishes the live seven-day value,
-and releases the already queued request as soon as more quota exists. The OAuth
-token is read from the same macOS Keychain item Claude Code uses; it is never
-written to the probe stamp or log.
+sleep. The observed counterexample was a plan upgrade: the shared cache still
+said `99%` used while Claude's live Usage endpoint had already reset the account
+to `0%`. `CLAUDE_WEEKLY_QUOTA_PROBE_SECS` therefore defaults to `300`. At that
+interval the parked hook calls Claude's authenticated `/api/oauth/usage`
+endpoint, republishes the live seven-day value, and releases the already queued
+request as soon as more quota exists. The OAuth token is read from the same
+macOS Keychain item Claude Code uses; it is never written to the probe stamp or
+log.
 
 `~/.claude/quota-weekly-probe` stores the machine-wide last-attempt epoch and,
 after a successful call, its live `used` and `resets_at`. Every parked terminal
-uses it as the next deadline and trusts that live result for the hour; the status
-line does too, so a frozen session payload cannot keep painting `-1%` after the
-gate has correctly released it. The timestamp is written before the network
-call: an outage does not turn many parked terminals into a tight retry loop.
-PID-derived jitter still spreads terminals around that deadline.
+uses it as the next deadline and trusts that live result for five minutes; the
+status line does too, so a frozen session payload cannot keep painting `-1%`
+after the gate has correctly released it. The timestamp is written before the
+network call: an outage does not turn many parked terminals into a tight retry
+loop. PID-derived jitter still spreads terminals around that deadline.
 
-If both windows are exhausted, the hourly weekly probe remains the wake event.
+If both windows are exhausted, the five-minute weekly probe remains the wake event.
 When it returns quota, the loop re-evaluates the five-hour gate and waits for its
 reset too if necessary. The `604920`-second safety ceiling and `605040` hook
-timeouts remain, although an individual weekly sleep is now only about an hour.
+timeouts remain, although an individual weekly sleep is now only about five minutes.
 
 ---
 
@@ -1409,7 +1409,7 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   allowance, `used` increases, and across windows `resets_at` increases — so
   comparing `(resets_at, used)` lexicographically orders frozen session payloads.
   It is not an absolute law: a plan boost can return weekly allowance inside the
-  same window. The gate's hourly authenticated probe is the explicit escape hatch
+  same window. The gate's periodic authenticated probe is the explicit escape hatch
   for that case.
 - **…but value order alone cannot self-correct, and that was a real bug.** It is
   monotone by construction, so a reading that is *wrong but ahead* — one whose
@@ -1432,11 +1432,12 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   15 min: long enough that a quiet machine doesn't flap (nobody working means
   nobody burning, so an old reading is still a correct one), short enough that a
   window can't run to its end on a number seen once at the start.
-- **Weekly exhaustion is probed hourly.** The gate reads Claude Code's live Usage
-  endpoint after `CLAUDE_WEEKLY_QUOTA_PROBE_SECS` (default 3600 s) and publishes
-  the returned seven-day value as fresh. Because an hour exceeds the normal
-  stale threshold, a real lower value replaces a cached `101%` reading even when
-  `resets_at` did not change.
+- **Weekly exhaustion is probed every five minutes.** The gate reads Claude
+  Code's live Usage endpoint after `CLAUDE_WEEKLY_QUOTA_PROBE_SECS` (default
+  300 s), publishes the returned seven-day value, and keeps that authenticated
+  result authoritative in the shared probe stamp until the next poll. A real
+  lower value therefore releases the gate immediately even if the monotone
+  shared-state merge still holds a frozen, higher session payload.
 - **Self-healing instead of locking.** Every terminal writes unlocked, so two
   writers can interleave and lose an update — but the merge is monotone-or-fresher
   and re-runs a second later, so a lost update heals itself. A lock would cost more
@@ -1671,7 +1672,7 @@ fi
 
 # A successful authenticated weekly probe is stronger evidence than any
 # session's frozen rate_limits payload. Keep its result authoritative for the
-# same hour the request gate uses before probing again; this also prevents a
+# same five-minute interval the request gate uses before probing again; this also prevents a
 # restarted status line from immediately repainting a returned allowance as the
 # old cached 101%-used value.
 probe_record=$(sed -n '1p' "$HOME/.claude/quota-weekly-probe" 2>/dev/null)
@@ -1679,8 +1680,8 @@ probe_at="" probe_week="" probe_reset=""
 IFS=' ' read -r probe_at probe_week probe_reset <<EOF
 $probe_record
 EOF
-probe_secs="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-3600}"
-case "$probe_secs" in ''|*[!0-9]*|0) probe_secs=3600 ;; esac
+probe_secs="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-300}"
+case "$probe_secs" in ''|*[!0-9]*|0) probe_secs=300 ;; esac
 case "$probe_at:$probe_week:$probe_reset" in
   *[!0-9.:]*|*::*|:*|*:) ;;
   *)
@@ -2714,8 +2715,8 @@ if [ -n "$week" ]; then
   fi
 
   # A weekly park belongs on the weekly percentage, never on the healthy 5h
-  # figure. Include the weekday so the next hourly probe remains unambiguous
-  # around midnight; a bare clock is sufficient inside a five-hour window.
+  # figure. Include the weekday so the probe deadline remains unambiguous next
+  # to a potentially multi-day weekly reset; a bare clock suffices for 5h.
   if [ "$park_window" = seven_day ]; then
     week_wake=$(date -r "$park_wake" '+%a %H:%M' 2>/dev/null)
     week_sleep="${ORANGE}💤${RESET}"
