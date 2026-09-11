@@ -64,12 +64,14 @@ first, absolutes in brackets, working-day clocks:
 | `claude/hooks/quota-state.sh`, `quota-probe.sh`, `quota-gate.sh` | the machine-wide quota state it merges into, the live probe that keeps that state honest across a plan switch, and the request gate that parks a terminal on an exhausted window |
 | [`copilot/victor-copilot-statusline.md`](copilot/victor-copilot-statusline.md) | **GitHub Copilot CLI** status line — full reference |
 | `copilot/statusline.sh`, `copilot/quota-refresh.sh` | the scripts it documents |
-| `check-sync.sh` | verifies each doc's embedded copy still matches the real script |
+| `claude/test-quota-gate.sh`, `test-statusline.sh` | regression harnesses for the gate and the bar |
+| `check-sync.sh` | verifies each doc's embedded copies still match the real scripts |
 | `docs/screenshots/` | the annotated pictures above, plus the two scripts that regenerate them |
 
-Each doc **embeds a verbatim copy** of its scripts, so a single markdown file is
-enough to hand to someone — or to paste at an agent and say "set this up for me".
-`check-sync.sh` is what keeps those copies honest.
+Each doc **embeds a verbatim copy** of its scripts — for Claude that is the bar
+*and* all three quota hooks — so a single markdown file is enough to hand to
+someone, or to paste at an agent and say "set this up for me".
+`check-sync.sh` is what keeps those six copies honest.
 
 ## Install — let the agent do it
 

@@ -45,13 +45,19 @@ The remaining copies are still plain files and still need the copy-then-sync
 dance: everything under `claude/hooks/` and all of `copilot/`. Symlinking those
 the same way is the obvious next step and has not been done yet.
 
+The three `claude/hooks/quota-*.sh` now have a copy 3 as well — embedded under
+`## Hook 1` / `## Hook 2` / `## Hook 3` in `claude/victor-claude-statusline.md`,
+and compared by `check-sync.sh` like the rest. So for a hook the dance is: edit
+the live file, `cp` it into `claude/hooks/`, re-sync the embedded block, run the
+checker.
+
 ### Always run the checker before committing
 
 ```sh
 ./check-sync.sh          # exits non-zero on the first mismatch
 ```
 
-It compares copy 2 against copy 3 for all four scripts. It cannot see copy 1 —
+It compares copy 2 against copy 3 for all six scripts. It cannot see copy 1 —
 nothing can — so **diff the live file against the repo file yourself** as well.
 
 Careful: `diff` here is rewritten by an rtk hook that summarises instead of

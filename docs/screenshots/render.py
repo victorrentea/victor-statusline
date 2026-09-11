@@ -145,10 +145,14 @@ SPECS = [
             (r"(?<=\))\d+%", "week",
              "quota left in the rolling <b>7-day</b> window, same thresholds as the 5h "
              "figure."),
-            (r"\d+wd\d+h", "week",
+            # The `wd` half is optional: the field drops units it does not need,
+            # so late on a Friday it is a bare "13h". Anchored to the end of the
+            # line because a bare \d+h would otherwise match inside "3h19".
+            (r"(?:\d+wd)?\d+h$", "week",
              "<b>working</b> time until the weekly window resets: <code>wd</code> is "
              "weekdays, with Saturday and Sunday subtracted, because a weekend burns no "
-             "quota and flattered the number every Monday."),
+             "quota and flattered the number every Monday. Units it does not need are "
+             "dropped, so under a day left prints as a bare <code>13h</code>."),
         ],
     ),
     dict(
@@ -322,9 +326,10 @@ SPECS = [
              "those same credits in absolute terms, with their list-price equivalent — "
              "<code>$68</code> lands instantly where <code>6759 AIC</code> needs "
              "arithmetic first."),
-            (r"\d+wd\d+h", "week",
+            # Same shape, same anchor, as the weekly field on the Claude line.
+            (r"(?:\d+wd)?\d+h$", "week",
              "working days and hours until the monthly credit quota resets, weekends "
-             "again excluded."),
+             "again excluded; <code>wd</code> disappears once under a day is left."),
         ],
     ),
 ]
