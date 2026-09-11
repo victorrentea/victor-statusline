@@ -1094,14 +1094,18 @@ log.
 after a successful call, its live `used` and `resets_at`. Every parked terminal
 uses it as the next deadline and trusts that live result for five minutes; the
 status line does too, so a frozen session payload cannot keep painting `-1%`
-after the gate has correctly released it. The timestamp is written before the
-network call: an outage does not turn many parked terminals into a tight retry
-loop. PID-derived jitter still spreads terminals around that deadline.
+after the gate has correctly released it. The stamp says `pending` while the
+network call runs and `failed` if it fails. Concurrent hooks that see `pending`
+re-read after one second, so a successful refresh releases all of them instead
+of leaving the non-owner hooks asleep for five minutes; `failed` retains the
+normal retry backoff. PID-derived jitter still spreads terminals around that
+deadline.
 
-If both windows are exhausted, the five-minute weekly probe remains the wake event.
-When it returns quota, the loop re-evaluates the five-hour gate and waits for its
-reset too if necessary. The `604920`-second safety ceiling and `605040` hook
-timeouts remain, although an individual weekly sleep is now only about five minutes.
+If both windows are exhausted, the five-minute weekly probe remains the wake
+event. When it returns quota, the loop re-evaluates the five-hour gate and waits
+for its reset too if necessary. The `604920`-second safety ceiling and `605040`
+hook timeouts remain, although an individual weekly sleep is now only about five
+minutes.
 
 ---
 
@@ -1437,7 +1441,9 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   300 s), publishes the returned seven-day value, and keeps that authenticated
   result authoritative in the shared probe stamp until the next poll. A real
   lower value therefore releases the gate immediately even if the monotone
-  shared-state merge still holds a frozen, higher session payload.
+  shared-state merge still holds a frozen, higher session payload. Hooks that
+  arrive during the live request see the stamp's `pending` state and recheck it
+  after one second instead of sleeping for the full polling interval.
 - **Self-healing instead of locking.** Every terminal writes unlocked, so two
   writers can interleave and lose an update — but the merge is monotone-or-fresher
   and re-runs a second later, so a lost update heals itself. A lock would cost more
@@ -1672,9 +1678,9 @@ fi
 
 # A successful authenticated weekly probe is stronger evidence than any
 # session's frozen rate_limits payload. Keep its result authoritative for the
-# same five-minute interval the request gate uses before probing again; this also prevents a
-# restarted status line from immediately repainting a returned allowance as the
-# old cached 101%-used value.
+# same five-minute interval the request gate uses before probing again; this
+# also prevents a restarted status line from immediately repainting a returned
+# allowance as the old cached 101%-used value.
 probe_record=$(sed -n '1p' "$HOME/.claude/quota-weekly-probe" 2>/dev/null)
 probe_at="" probe_week="" probe_reset=""
 IFS=' ' read -r probe_at probe_week probe_reset <<EOF

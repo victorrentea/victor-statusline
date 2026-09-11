@@ -1,8 +1,8 @@
 #!/bin/sh
 # Park this terminal when the 5h quota is nearly gone or the weekly quota has
 # 1% or less left. The 5h gate wakes at its reset; the weekly gate also probes
-# Claude's live usage endpoint every five minutes, so an early reset or plan boost can
-# release unattended work without trusting a stale advertised reset.
+# Claude's live usage endpoint every five minutes, so an early reset or plan
+# boost can release unattended work without trusting a stale advertised reset.
 #
 # Wired to UserPromptSubmit, PreToolUse and PostToolUse: those are the three
 # points immediately before an API request. PostToolUse is the tightest (the
@@ -107,11 +107,12 @@ while :; do
   esac
 
   # A low cached weekly reading is rechecked live once the shared attempt clock
-  # is five minutes old. `measured_at` is deliberately irrelevant here: a restarted
-  # status line can mistake its first frozen payload for a new API response.
+  # is five minutes old. `measured_at` is deliberately irrelevant here: a
+  # restarted status line can mistake its first frozen payload for a new response.
   # Writing the attempt before curl makes concurrent sleepers converge on the
   # same next deadline even when the network request fails. A successful result
   # stays in the same file so all hooks trust it until the next periodic probe.
+  probe_pending=0
   if [ "$go7" = 1 ]; then
     probe_record=$(sed -n '1p' "$PROBE_STAMP" 2>/dev/null)
     probe_last="" probe_cached_used="" probe_cached_reset=""
@@ -123,6 +124,7 @@ EOF
     esac
     if [ "$probe_last" -gt 0 ] && [ "$now" -lt "$((probe_last + PROBE_SECS))" ]; then
       case "$probe_cached_used" in
+        pending) probe_pending=1 ;;
         ''|*[!0-9.]*) ;;
         *)
           case "$probe_cached_reset" in ''|*[!0-9]*|0) probe_cached_reset=$resets7 ;; esac
@@ -134,12 +136,13 @@ EOF
       esac
     elif [ "$now" -ge "$((probe_last + PROBE_SECS))" ]; then
       mkdir -p "$(dirname "$PROBE_STAMP")"
-      printf '%s' "$now" > "$PROBE_STAMP"
+      printf '%s pending' "$now" > "$PROBE_STAMP"
       live7=$(probe_weekly 2>/dev/null)
       probe_used=$(printf '%s' "$live7" | cut -d' ' -f1)
       probe_reset=$(printf '%s' "$live7" | cut -d' ' -f2)
       case "$probe_used" in
         ''|*[!0-9.]*)
+          printf '%s failed' "$now" > "$PROBE_STAMP"
           printf '%s probe-failed session=%s window=seven_day\n' \
             "$(date '+%Y-%m-%dT%H:%M:%S')" "$session" >> "$LOG"
           ;;
@@ -160,6 +163,13 @@ EOF
   fi
 
   [ "$go" = 1 ] || [ "$go7" = 1 ] || exit 0
+
+  # Another hook owns the live request. Re-read its result promptly instead of
+  # turning the short network call into a full polling-interval sleep.
+  if [ "$go7" = 1 ] && [ "$probe_pending" = 1 ]; then
+    sleep 1
+    continue
+  fi
 
   if [ "$go7" = 1 ]; then
     window=seven_day

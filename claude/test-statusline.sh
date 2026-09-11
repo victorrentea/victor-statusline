@@ -157,9 +157,9 @@ JSON
 out=$(printf '%s' "$payload" | env -u CLAUDE_WEEKLY_QUOTA_PROBE_SECS sh "$SCRIPT")
 assert_not_contains "weekly probe: default authority expires after five minutes" "$out" "100%"
 
-# A failed network attempt writes only its timestamp. That partial record is a
-# retry throttle, not quota data, and must never replace the session percentage.
-printf '%s' "$now" > "$HOME/.claude/quota-weekly-probe"
+# A failed network attempt is a retry throttle, not quota data, and must never
+# replace the session percentage.
+printf '%s failed' "$now" > "$HOME/.claude/quota-weekly-probe"
 payload=$(cat <<JSON
 {"session_id":"statusline-test-weekly-probe-failed","model":{"display_name":"Claude Opus"},
  "context_window":{},
@@ -168,7 +168,7 @@ payload=$(cat <<JSON
 JSON
 )
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
-assert_contains "weekly probe: timestamp-only failed probe is not quota data" "$out" "75%"
+assert_contains "weekly probe: failed marker is not quota data" "$out" "75%"
 
 # --- Case: subagents in flight ----------------------------------------------
 # Builds a session directory shaped like the one Claude Code writes -- a parent

@@ -234,6 +234,38 @@ else
   fail=$((fail + 1)); printf 'FAIL  weekly: two percent left stays awake\n'
 fi
 
+# Hooks arriving while the machine-wide probe is in flight must wait only for
+# that probe, not for the entire polling interval. This is the multi-session
+# race that otherwise leaves some requests parked after a successful refresh.
+session=quota-gate-test-weekly-probe-in-flight
+pending_stamp="$TMP/weekly-pending-probe.stamp"
+write_state 88 "$five_reset" "$now" 99 "$week_reset" "$now"
+printf '%s pending' "$now" > "$pending_stamp"
+(
+  sleep 0.1
+  printf '%s 0 %s' "$now" "$week_reset" > "$pending_stamp"
+) &
+updater_pid=$!
+printf '{"session_id":"%s"}' "$session" \
+  | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_SECS=300 \
+      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$pending_stamp" sh "$GATE" \
+      >/dev/null 2>&1 &
+gate_pid=$!
+tries=0
+while kill -0 "$gate_pid" 2>/dev/null && [ "$tries" -lt 125 ]; do
+  sleep 0.02
+  tries=$((tries + 1))
+done
+wait "$updater_pid"
+if ! kill -0 "$gate_pid" 2>/dev/null \
+   && [ ! -f "$HOME/.claude/quota-park/$session" ]; then
+  pass=$((pass + 1)); printf 'ok    weekly: a concurrent hook follows the in-flight probe result\n'
+else
+  fail=$((fail + 1)); printf 'FAIL  weekly: a concurrent hook follows the in-flight probe result\n'
+fi
+stop_gate
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

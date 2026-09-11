@@ -147,9 +147,9 @@ fi
 
 # A successful authenticated weekly probe is stronger evidence than any
 # session's frozen rate_limits payload. Keep its result authoritative for the
-# same five-minute interval the request gate uses before probing again; this also prevents a
-# restarted status line from immediately repainting a returned allowance as the
-# old cached 101%-used value.
+# same five-minute interval the request gate uses before probing again; this
+# also prevents a restarted status line from immediately repainting a returned
+# allowance as the old cached 101%-used value.
 probe_record=$(sed -n '1p' "$HOME/.claude/quota-weekly-probe" 2>/dev/null)
 probe_at="" probe_week="" probe_reset=""
 IFS=' ' read -r probe_at probe_week probe_reset <<EOF
