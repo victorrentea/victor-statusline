@@ -61,6 +61,7 @@ first, absolutes in brackets, working-day clocks:
 |------|------------|
 | [`claude/victor-claude-statusline.md`](claude/victor-claude-statusline.md) | **Claude Code** status line — full reference and design rationale |
 | `claude/statusline-command.sh` | the script it documents |
+| `claude/hooks/quota-state.sh`, `quota-probe.sh`, `quota-gate.sh` | the machine-wide quota state it merges into, the live probe that keeps that state honest across a plan switch, and the request gate that parks a terminal on an exhausted window |
 | [`copilot/victor-copilot-statusline.md`](copilot/victor-copilot-statusline.md) | **GitHub Copilot CLI** status line — full reference |
 | `copilot/statusline.sh`, `copilot/quota-refresh.sh` | the scripts it documents |
 | `check-sync.sh` | verifies each doc's embedded copy still matches the real script |
@@ -93,6 +94,7 @@ this repo:
 ```sh
 # Claude Code
 install -m 755 claude/statusline-command.sh  ~/.claude/statusline-command.sh
+install -m 755 claude/hooks/quota-*.sh       ~/.claude/hooks/
 ```
 
 then add to `~/.claude/settings.json`:
@@ -117,9 +119,12 @@ then add the `statusLine` block from `copilot/victor-copilot-statusline.md`
 
 - **macOS/BSD assumptions.** `date -r`, `stat -f` and friends are BSD flavours;
   on Linux they need the GNU spellings.
-- **The Claude bar depends on two sibling hooks** it does not ship here —
-  `turn-state.sh` (turn boundaries) and `quota-state.sh` (cross-terminal quota
-  merge). Without them it still runs and degrades to its fallback heuristics;
+- **The Claude bar depends on sibling hooks.** `turn-state.sh` (turn
+  boundaries) is not shipped here; the quota trio under `claude/hooks/` is —
+  `quota-state.sh` (cross-terminal merge), `quota-probe.sh` (asks the account
+  every five minutes, so a plan switch shows within minutes instead of at the
+  next window reset), `quota-gate.sh` (parks a terminal on an exhausted
+  window). Without them it still runs and degrades to its fallback heuristics;
   the doc says exactly where.
 - **Nothing here sets the session title**, deliberately: any hook that emits
   `sessionTitle` permanently suppresses Claude Code's own AI summary, which is

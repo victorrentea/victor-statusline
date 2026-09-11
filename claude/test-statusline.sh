@@ -126,49 +126,45 @@ assert_contains "weekly parked: glyph glued to weekly percentage" "$out" "0%💤
 assert_contains "weekly parked: wake clock includes weekday"      "$out" "→ $back"
 assert_not_contains "weekly parked: five-hour percentage stays awake" "$out" "60%💤"
 
-# --- Case 5: a live weekly probe outranks a frozen session payload ----------
-# Plan boosts can return allowance without changing the advertised reset. The
-# status line must show the authenticated probe result for the same polling
-# interval instead of the session's stale 101%-used payload.
+# --- Case 5: a probe reading outranks a frozen session payload --------------
+# The plan-switch bug of 2026-09-11 (Max 5x -> 20x): an idle terminal keeps
+# re-publishing the payload it was handed before the allowance grew, and by
+# value that old, higher figure wins the merge on every render. quota-probe.sh
+# writes the account's real number with source=probe, and quota-state.sh must
+# refuse to let a NON-fresh session reading displace it. Needs the real
+# quota-state.sh under this throwaway HOME; quota-probe.sh is deliberately
+# absent, so the render never fires a network request from a test.
+STATE="$PWD/claude/hooks/quota-state.sh"
+mkdir -p "$HOME/.claude/hooks"
+ln -s "$STATE" "$HOME/.claude/hooks/quota-state.sh"
 session="statusline-test-weekly-probe"
-printf '%s 0 %s' "$now" "$week_reset" > "$HOME/.claude/quota-weekly-probe"
+rm -f "/tmp/claude-statusline-rl-$session.txt"
 payload=$(cat <<JSON
 {"session_id":"$session","model":{"display_name":"Claude Opus"},
  "context_window":{},
  "rate_limits":{"five_hour":{"used_percentage":40,"resets_at":$reset},
-                "seven_day":{"used_percentage":101,"resets_at":$week_reset}}}
+                "seven_day":{"used_percentage":94,"resets_at":$week_reset}}}
 JSON
 )
+# First render: nothing stored and a payload never seen -> fresh, and 94 lands.
+# This is the pre-upgrade state every terminal was in.
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
-assert_contains "weekly probe: live allowance replaces stale exhausted value" "$out" "100%"
-assert_not_contains "weekly probe: stale negative percentage is gone" "$out" "-1%"
-
-# Once the five-minute polling interval has elapsed, the renderer must stop
-# treating the old probe as authoritative; the gate will fetch a new one before
-# allowing the next request.
-printf '%s 0 %s' "$((now - 301))" "$week_reset" > "$HOME/.claude/quota-weekly-probe"
-payload=$(cat <<JSON
-{"session_id":"statusline-test-weekly-probe-expired","model":{"display_name":"Claude Opus"},
- "context_window":{},
- "rate_limits":{"five_hour":{"used_percentage":40,"resets_at":$reset},
-                "seven_day":{"used_percentage":101,"resets_at":$week_reset}}}
-JSON
-)
-out=$(printf '%s' "$payload" | env -u CLAUDE_WEEKLY_QUOTA_PROBE_SECS sh "$SCRIPT")
-assert_not_contains "weekly probe: default authority expires after five minutes" "$out" "100%"
-
-# A failed network attempt is a retry throttle, not quota data, and must never
-# replace the session percentage.
-printf '%s failed' "$now" > "$HOME/.claude/quota-weekly-probe"
-payload=$(cat <<JSON
-{"session_id":"statusline-test-weekly-probe-failed","model":{"display_name":"Claude Opus"},
- "context_window":{},
- "rate_limits":{"five_hour":{"used_percentage":40,"resets_at":$reset},
-                "seven_day":{"used_percentage":25,"resets_at":$week_reset}}}
-JSON
-)
+assert_contains "probe: the frozen payload paints the old plan's number first" "$out" "6% /"
+# The probe arrives with the account's real figure.
+"$STATE" set -1 0 9 "$week_reset" >/dev/null
+# Same bytes again -> non-fresh -> the measurement holds, whatever the cache says.
 out=$(printf '%s' "$payload" | sh "$SCRIPT")
-assert_contains "weekly probe: failed marker is not quota data" "$out" "75%"
+assert_contains "probe: the measured 9% used replaces the frozen 94%" "$out" "91% /"
+assert_not_contains "probe: the old plan's number is gone" "$out" "6% /"
+
+# Protection lasts two probe intervals (the probe runs every one). Past that the
+# probe reading is as old as anything else and value order resumes -- the
+# deliberate fallback when the probe keeps failing.
+jq '.seven_day.measured_at -= 601' "$HOME/.claude/quota.json" > "$HOME/.claude/quota.json.new" \
+  && mv "$HOME/.claude/quota.json.new" "$HOME/.claude/quota.json"
+out=$(printf '%s' "$payload" | env -u CLAUDE_QUOTA_PROBE_SECS -u CLAUDE_WEEKLY_QUOTA_PROBE_SECS sh "$SCRIPT")
+assert_contains "probe: an aged-out probe reading yields to value order again" "$out" "6% /"
+rm -f "$HOME/.claude/hooks/quota-state.sh" "$HOME/.claude/quota.json"
 
 # --- Case: subagents in flight ----------------------------------------------
 # Builds a session directory shaped like the one Claude Code writes -- a parent

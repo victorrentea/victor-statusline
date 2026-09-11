@@ -5,6 +5,7 @@
 cd "$(dirname "$0")/.." || exit 2
 GATE="$PWD/claude/hooks/quota-gate.sh"
 STATE="$PWD/claude/hooks/quota-state.sh"
+PROBE_SH="$PWD/claude/hooks/quota-probe.sh"
 
 TMP=$(mktemp -d)
 gate_pid=""
@@ -36,6 +37,7 @@ trap cleanup EXIT INT TERM
 export HOME="$TMP"
 mkdir -p "$HOME/.claude/hooks"
 ln -s "$STATE" "$HOME/.claude/hooks/quota-state.sh"
+ln -s "$PROBE_SH" "$HOME/.claude/hooks/quota-probe.sh"
 
 pass=0
 fail=0
@@ -83,8 +85,11 @@ line_count() {
   [ -f "$1" ] && wc -l < "$1" | tr -d ' ' || echo 0
 }
 
+# Stands in for the usage endpoint: prints "u5 r5 u7 r7" the way quota-probe.sh
+# expects. The 5h pair defaults to "-1 0", i.e. unknown, which `set` keeps
+# stored -- these tests are about the weekly window.
 probe="$TMP/weekly-probe.sh"
-printf '#!/bin/sh\nprintf "called\\n" >> "$CLAUDE_TEST_PROBE_CALLS"\nprintf "%%s %%s\\n" "$CLAUDE_TEST_PROBE_USED" "$CLAUDE_TEST_PROBE_RESET"\n' > "$probe"
+printf '#!/bin/sh\nprintf "called\\n" >> "$CLAUDE_TEST_PROBE_CALLS"\nprintf "%%s %%s %%s %%s\\n" "${CLAUDE_TEST_PROBE_USED5:--1}" "${CLAUDE_TEST_PROBE_RESET5:-0}" "$CLAUDE_TEST_PROBE_USED" "$CLAUDE_TEST_PROBE_RESET"\n' > "$probe"
 chmod +x "$probe"
 
 now=$(date +%s)
@@ -97,9 +102,9 @@ session=quota-gate-test-default-probe-cadence
 probe_calls="$TMP/weekly-default-probe.calls"
 write_state 88 "$five_reset" "$now" 99 "$week_reset" "$now"
 printf '{"session_id":"%s"}' "$session" \
-  | env -u CLAUDE_WEEKLY_QUOTA_PROBE_SECS \
+  | env -u CLAUDE_QUOTA_PROBE_SECS -u CLAUDE_WEEKLY_QUOTA_PROBE_SECS \
       CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
-      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-default-probe.stamp" \
+      CLAUDE_QUOTA_PROBE_FILE="$TMP/weekly-default-probe.stamp" \
       CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
       CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
       CLAUDE_TEST_PROBE_USED=99 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE" \
@@ -121,7 +126,7 @@ write_state 88 "$five_reset" "$now" 99 "$week_reset" "$now"
 printf '{"session_id":"%s"}' "$session" \
   | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
       CLAUDE_WEEKLY_QUOTA_PROBE_SECS=3600 \
-      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-first-probe.stamp" \
+      CLAUDE_QUOTA_PROBE_FILE="$TMP/weekly-first-probe.stamp" \
       CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
       CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
       CLAUDE_TEST_PROBE_USED=99 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE" \
@@ -148,7 +153,7 @@ write_state 88 "$five_reset" "$now" 101 "$week_reset" "$((now - 3601))"
 printf '{"session_id":"%s"}' "$session" \
   | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
       CLAUDE_WEEKLY_QUOTA_PROBE_SECS=3600 \
-      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-reset-probe.stamp" \
+      CLAUDE_QUOTA_PROBE_FILE="$TMP/weekly-reset-probe.stamp" \
       CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
       CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
       CLAUDE_TEST_PROBE_USED=0 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE"
@@ -161,13 +166,19 @@ else
 fi
 
 # Until the configured hour, every other hook must reuse that live "quota available"
-# result instead of either probing again or trusting a newly repinned stale 101.
+# result instead of either probing again or trusting a repinned stale 101. The
+# repin is what an idle terminal does every render: it re-publishes the frozen
+# payload it was handed before the allowance came back, non-fresh, and by value
+# 101 beats 0 -- the plan-switch bug. The merge must refuse it while the
+# probe's reading is young.
 session=quota-gate-test-weekly-reset-cached
-write_state 88 "$five_reset" "$now" 101 "$week_reset" "$now"
+"$STATE" publish -1 0 101 "$week_reset" 0 >/dev/null
+assert_eq "weekly: a frozen session payload cannot displace a young probe reading" \
+  "$("$STATE" read7 | cut -d' ' -f1,4)" "0 probe"
 printf '{"session_id":"%s"}' "$session" \
   | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
       CLAUDE_WEEKLY_QUOTA_PROBE_SECS=3600 \
-      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-reset-probe.stamp" \
+      CLAUDE_QUOTA_PROBE_FILE="$TMP/weekly-reset-probe.stamp" \
       CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
       CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
       CLAUDE_TEST_PROBE_USED=0 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE" \
@@ -206,7 +217,7 @@ write_state 96 "$five_reset" "$now" 99 "$week_reset" "$now"
 printf '{"session_id":"%s"}' "$session" \
   | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
       CLAUDE_WEEKLY_QUOTA_PROBE_SECS=3600 \
-      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$TMP/weekly-both-probe.stamp" \
+      CLAUDE_QUOTA_PROBE_FILE="$TMP/weekly-both-probe.stamp" \
       CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND="$probe" \
       CLAUDE_TEST_PROBE_CALLS="$probe_calls" \
       CLAUDE_TEST_PROBE_USED=99 CLAUDE_TEST_PROBE_RESET="$week_reset" sh "$GATE" \
@@ -243,13 +254,14 @@ write_state 88 "$five_reset" "$now" 99 "$week_reset" "$now"
 printf '%s pending' "$now" > "$pending_stamp"
 (
   sleep 0.1
-  printf '%s 0 %s' "$now" "$week_reset" > "$pending_stamp"
+  write_state 88 "$five_reset" "$now" 0 "$week_reset" "$now"
+  printf '%s ok' "$now" > "$pending_stamp"
 ) &
 updater_pid=$!
 printf '{"session_id":"%s"}' "$session" \
   | CLAUDE_QUOTA_JITTER=0 CLAUDE_QUOTA_WAKE_BUFFER=0 \
       CLAUDE_WEEKLY_QUOTA_PROBE_SECS=300 \
-      CLAUDE_WEEKLY_QUOTA_PROBE_FILE="$pending_stamp" sh "$GATE" \
+      CLAUDE_QUOTA_PROBE_FILE="$pending_stamp" sh "$GATE" \
       >/dev/null 2>&1 &
 gate_pid=$!
 tries=0

@@ -156,7 +156,7 @@ badge is only worth anything if it can be trusted.
 | `Opus 5` | model display name (with ` context)` trimmed to `)`) | `.model.display_name` |
 | `xh` | reasoning effort, abbreviated lower-case (`l`/`m`/`h`/`xh`/`max`), glued straight onto the name before any `(size)` | `.effort.level` |
 | `50K` | absolute context tokens used (blue) = `used% × size` | `.context_window.used_percentage` × size |
-| `/200K` | context window size — **omitted on Opus**, whose window is always 1M | model's `(size)` suffix, else `.context_window.context_window_size` |
+| `/200K` | context window size — **omitted on Opus and Fable**, whose window is always 1M | model's `(size)` suffix, else `.context_window.context_window_size` |
 
 - The effort letters carry **no separator**. It used to read `Opus 5/XH`, and
   that slash was a delimiter solving a problem that does not exist: the effort is
@@ -174,16 +174,18 @@ badge is only worth anything if it can be trusted.
   happen.
 - The absolute token count (`50K`) is rendered **blue** when there is nothing to
   worry about — and **blinks** when there is (§1.1).
-- **On Opus the window size is not printed at all** — neither the `(1M)` the
-  display name arrives with (`Opus 5 (1M context)`), nor the `/1M` after the
-  token count. Opus only ever runs at 1M here, so both were repeating, on every
-  render of every session, a fact that was never in doubt; the segment reads
-  `Opus 5xh 330K`, and 330K against a window you already know is the whole
-  message. It survives everywhere it is still a variable: **Sonnet keeps
-  `/200K`**, because a small window is exactly the case where "how much room is
-  left" needs its denominator spelled out, and a non-Opus 1M model keeps `/1M`.
-  An Opus deliberately run at 200K would keep its label too — the suffix is
-  dropped only when it is the one that says nothing.
+- **On Opus and Fable the window size is not printed at all** — neither the
+  `(1M)` the display name arrives with (`Opus 5 (1M context)`,
+  `Fable 5.1 (1M context)`), nor the `/1M` after the token count. Both families
+  only ever run at 1M here, so both labels were repeating, on every render of
+  every session, a fact that was never in doubt; the segment reads
+  `Opus 5xh 330K` or `Fable 5.1h 330K`, and 330K against a window you already
+  know is the whole message. It survives everywhere it is still a variable:
+  **Sonnet keeps `/200K`**, because a small window is exactly the case where
+  "how much room is left" needs its denominator spelled out, and any other
+  family on a 1M window keeps `/1M`. An Opus or Fable deliberately run at 200K
+  would keep its label too — the suffix is dropped only when it is the one that
+  says nothing.
 - The explicit `• N%` follows the same line: it is **dropped on any 1M window**,
   where the ratio is self-evident (`330K` out of a million, or the `used/size`
   pair spelling it out), and **kept on smaller windows**, where it is not. There
@@ -1062,7 +1064,11 @@ cache of *this session's* last API response — but **worse**, because a termina
 can sit idle for hours while the week keeps moving. That's exactly why it goes
 through the same machine-wide merge (see *Cross-terminal quota state* below):
 whichever of your terminals talked to the API most recently is the one whose
-number you see.
+number you see. And because no session cache can notice an allowance that
+*grew*, every five minutes some render also kicks `quota-probe.sh`, which asks
+the account's usage endpoint directly and writes both windows as the one
+reading a frozen payload cannot displace — so the cell converges on the site's
+number within minutes of a plan switch instead of at the next window reset.
 
 ### Parked on weekly quota — `0%💤 → Fri 17:08 / 7h`
 
@@ -1083,23 +1089,27 @@ window claims remains.
 A cached low weekly reading is actionable, but no longer trusted for one long
 sleep. The observed counterexample was a plan upgrade: the shared cache still
 said `99%` used while Claude's live Usage endpoint had already reset the account
-to `0%`. `CLAUDE_WEEKLY_QUOTA_PROBE_SECS` therefore defaults to `300`. At that
-interval the parked hook calls Claude's authenticated `/api/oauth/usage`
-endpoint, republishes the live seven-day value, and releases the already queued
-request as soon as more quota exists. The OAuth token is read from the same
-macOS Keychain item Claude Code uses; it is never written to the probe stamp or
-log.
+to `0%`. `CLAUDE_QUOTA_PROBE_SECS` (alias `CLAUDE_WEEKLY_QUOTA_PROBE_SECS`)
+therefore defaults to `300`. At that interval the parked hook runs
+`quota-probe.sh` — the same probe the status line kicks in the background —
+which calls Claude's authenticated `/api/oauth/usage` endpoint, writes both
+windows into `quota.json` with `source: probe`, and so releases the already
+queued request as soon as more quota exists. The OAuth token is read from the
+same macOS Keychain item Claude Code uses; it is never written to the stamp or
+the log.
 
-`~/.claude/quota-weekly-probe` stores the machine-wide last-attempt epoch and,
-after a successful call, its live `used` and `resets_at`. Every parked terminal
-uses it as the next deadline and trusts that live result for five minutes; the
-status line does too, so a frozen session payload cannot keep painting `-1%`
-after the gate has correctly released it. The stamp says `pending` while the
-network call runs and `failed` if it fails. Concurrent hooks that see `pending`
-re-read after one second, so a successful refresh releases all of them instead
-of leaving the non-owner hooks asleep for five minutes; `failed` retains the
-normal retry backoff. PID-derived jitter still spreads terminals around that
-deadline.
+`~/.claude/quota-probe` is the probe's stamp, `<epoch> pending|ok|failed`, the
+epoch being when the attempt *started* — written before the request, so every
+caller converges on the same next deadline even when it fails. Every parked
+terminal uses it as its deadline; the value itself lives only in `quota.json`,
+where the merge keeps it safe from frozen session payloads for two probe
+intervals, so nothing can paint `-1%` again after the gate has correctly
+released. A `mkdir` lock makes concurrent callers — the gate in every parked
+terminal, the status line in every open one — send one request between them;
+hooks that see `pending` re-read after one second, so a successful refresh
+releases all of them instead of leaving the non-owner hooks asleep for five
+minutes; `failed` retains the normal retry backoff. PID-derived jitter still
+spreads terminals around that deadline.
 
 If both windows are exhausted, the five-minute weekly probe remains the wake
 event. When it returns quota, the loop re-evaluates the five-hour gate and waits
@@ -1412,9 +1422,8 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
 - **Value order, as the tie-break.** During ordinary consumption within one
   allowance, `used` increases, and across windows `resets_at` increases — so
   comparing `(resets_at, used)` lexicographically orders frozen session payloads.
-  It is not an absolute law: a plan boost can return weekly allowance inside the
-  same window. The gate's periodic authenticated probe is the explicit escape hatch
-  for that case.
+  It is not an absolute law: a plan switch changes the allowance inside the same
+  window, and that is what the probe further down exists for.
 - **…but value order alone cannot self-correct, and that was a real bug.** It is
   monotone by construction, so a reading that is *wrong but ahead* — one whose
   `resets_at` sits a few minutes past the true window boundary — can never be
@@ -1432,18 +1441,39 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   direction — it can only make the bar admit doubt it need not have.
 - **Freshness outranks value.** A reading a caller just saw arrive beats a stored
   one that nobody has re-confirmed in `CLAUDE_QUOTA_STALE_SECS` (default 900 s).
-  That clause is the *only* way a wrong-but-ahead value ever walks back down.
-  15 min: long enough that a quiet machine doesn't flap (nobody working means
-  nobody burning, so an old reading is still a correct one), short enough that a
-  window can't run to its end on a number seen once at the start.
-- **Weekly exhaustion is probed every five minutes.** The gate reads Claude
-  Code's live Usage endpoint after `CLAUDE_WEEKLY_QUOTA_PROBE_SECS` (default
-  300 s), publishes the returned seven-day value, and keeps that authenticated
-  result authoritative in the shared probe stamp until the next poll. A real
-  lower value therefore releases the gate immediately even if the monotone
-  shared-state merge still holds a frozen, higher session payload. Hooks that
-  arrive during the live request see the stamp's `pending` state and recheck it
-  after one second instead of sleeping for the full polling interval.
+  That clause is the only way a wrong-but-ahead value walks back down *among
+  session readings*. 15 min: long enough that a quiet machine doesn't flap
+  (nobody working means nobody burning, so an old reading is still a correct
+  one), short enough that a window can't run to its end on a number seen once
+  at the start.
+- **A plan switch breaks the value order, and a probe repairs it.** On
+  2026-09-11 the account went Max 5x → Max 20x mid-window. The site said 5 %
+  used; `quota.json` held 94 % with the very same `resets_at`, and every idle
+  terminal kept re-publishing its frozen 94 % — non-fresh, but ahead by value,
+  so it won the merge on every render. Neither rule above can express *the
+  allowance grew* (value order only walks `used` up; the stale hatch needs a
+  fresh reading, and the frozen terminals had none), so the bar read
+  `(-3)6% / 10h` for hours and would have until the window reset. Hence
+  `~/.claude/hooks/quota-probe.sh`: every `CLAUDE_QUOTA_PROBE_SECS` (300 s;
+  `CLAUDE_WEEKLY_QUOTA_PROBE_SECS` is an alias) some status-line render kicks
+  it in the background — one `stat(2)` of its stamp per render, a `mkdir` lock
+  so a hundred terminals send one request — and it asks the authenticated usage
+  endpoint behind Claude Code's `/usage` screen, then `quota-state.sh set`s
+  **both** windows with `measured_at = now` and `source: probe`. The weekly
+  figure is the tightest of the account's weekly caps (`limits[].group ==
+  "weekly"`, so a per-model scoped cap counts), falling back to
+  `seven_day.utilization`; the 5h figure gets corrected by the same request,
+  which is also why it never shows the grey `?` while the probe is healthy.
+- **A measurement outranks a cache.** While a window's stored reading is the
+  probe's and younger than two probe intervals, a *non-fresh* session reading
+  never displaces it, whatever it says. Fresh session readings keep the rules
+  above — they are live observations, and if they run higher the account
+  really did move. A frozen payload mistaken for fresh (a session's first
+  render after `/tmp` was emptied) can therefore still win for one interval;
+  the next probe puts the measured number back, so the bar converges within
+  minutes either way. The parked gate runs the same probe in the foreground,
+  and hooks that arrive during the request see the stamp's `pending` state and
+  recheck it after one second instead of sleeping for the full interval.
 - **Self-healing instead of locking.** Every terminal writes unlocked, so two
   writers can interleave and lose an update — but the merge is monotone-or-fresher
   and re-runs a second later, so a lost update heals itself. A lock would cost more
@@ -1454,8 +1484,8 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
 - The merged value is shown **unmarked while it is fresh** — which terminal
   measured it stays bookkeeping, not worth a glyph. How *old* it is, is not: see
   the grey `?` in §2.
-- `quota-state.sh read` emits `used resets_at measured_at` for the 5h window;
-  `read7` emits the weekly triple. The sibling `quota-gate.sh` consumes both.
+- `quota-state.sh read` emits `used resets_at measured_at source` for the 5h
+  window; `read7` the weekly quadruple. The sibling `quota-gate.sh` consumes both.
   They are parsed with `cut -d' ' -f<n>`, **not** `${x%% *}`/`${x##* }` —
   when the output grew a third field the suffix-strip form silently started
   returning `measured_at` where `resets_at` was meant. Extending an output that
@@ -1495,8 +1525,9 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   pure shell parameter expansion (`${model%% (*}` / `${model#* (}`) — no subshell.
 - Size label comes from either the model's `(size)` suffix (sed) or is computed
   from `context_window_size` (bc), then abbreviated K/M — and is suppressed
-  entirely when the model is Opus on a 1M window (`is_opus`, set by the same
-  `case` that strips `(1M)` off the display name before the effort splice).
+  entirely when the model is Opus or Fable on a 1M window (`is_1m_family`, set
+  by the same `case` that strips `(1M)` off the display name before the effort
+  splice).
 - **Burn-rate arrow** (`↑↗↘↓`): awk ratio `r = quota_left_frac / time_left_frac`
   over the hardcoded 18000s window, with reciprocal-symmetric bands so surplus and
   deficit are treated evenly; no arrow when on-track; arrow colored green/orange/red.
@@ -1569,19 +1600,20 @@ effort=$(echo "$input" | jq -r '.effort.level // empty')
 # said yet what they are running on.
 model_name="$model"
 effort_raw="$effort"
-# --- Opus's window size is a constant, and a constant is not information ----
-# Opus only ever runs at 1M here, so "(1M)" in the name and "/1M" after the
-# token count repeat, on every render of every session, a fact that was never
-# in doubt. Both are dropped: the segment reads "Opus 5xh 330K", and 330K
-# against a window everyone in the room already knows is the whole message.
-# The label survives for every other family, because there it is a real
-# variable — Sonnet's "/200K" is a smaller window, and a small window is
-# exactly the case where "how much room is left" still needs its denominator
-# spelled out. (An Opus run at 200K would keep its label too: the suffix is
-# only stripped when it is the one that says nothing.)
-is_opus=""
+# --- The 1M families' window size is a constant, and a constant is not information
+# Opus and Fable only ever run at 1M here, so "(1M)" in the name and "/1M" after
+# the token count repeat, on every render of every session, a fact that was
+# never in doubt. Both are dropped: the segment reads "Opus 5xh 330K" or
+# "Fable 5.1h 330K", and 330K against a window everyone in the room already
+# knows is the whole message. The label survives for every other family,
+# because there it is a real variable — Sonnet's "/200K" is a smaller window,
+# and a small window is exactly the case where "how much room is left" still
+# needs its denominator spelled out. (An Opus or Fable run at 200K would keep
+# its label too: the suffix is only stripped when it is the one that says
+# nothing.)
+is_1m_family=""
 case "$model" in
-  *Opus*) is_opus=1; model="${model% (1M)}" ;;
+  *Opus*|*Fable*) is_1m_family=1; model="${model% (1M)}" ;;
 esac
 # Abbreviated to its initial(s), in LOWER case. The effort level is a mode you
 # set and then rarely change, so the bar only has to CONFIRM it, not teach it —
@@ -1676,28 +1708,27 @@ if [ -n "$merged" ]; then
   fi
 fi
 
-# A successful authenticated weekly probe is stronger evidence than any
-# session's frozen rate_limits payload. Keep its result authoritative for the
-# same five-minute interval the request gate uses before probing again; this
-# also prevents a restarted status line from immediately repainting a returned
-# allowance as the old cached 101%-used value.
-probe_record=$(sed -n '1p' "$HOME/.claude/quota-weekly-probe" 2>/dev/null)
-probe_at="" probe_week="" probe_reset=""
-IFS=' ' read -r probe_at probe_week probe_reset <<EOF
-$probe_record
-EOF
-probe_secs="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-300}"
+# The merge above is only as good as the freshest SESSION cache on the machine,
+# and a cache cannot notice an allowance that GREW: after a plan switch (Max 5x
+# -> 20x, 2026-09-11) every idle terminal kept re-publishing the old plan's 94%
+# and the bar read "6% left" for hours while the account was at 5% used -- see
+# the header of quota-state.sh. So every CLAUDE_QUOTA_PROBE_SECS (300) some
+# render kicks quota-probe.sh, which asks the account's usage endpoint and
+# writes BOTH windows into quota.json as the reading the merge lets no frozen
+# payload displace; it lands in $merged on the next render, so the 5h figure is
+# corrected by the same request and is fresh by construction (measured_at=now).
+# Kicked in the background and only when the stamp's mtime is old, so a render
+# costs one stat(2) here; the probe takes a lock, so a hundred renders racing
+# across the boundary send one request between them.
+probe_stamp="${CLAUDE_QUOTA_PROBE_FILE:-$HOME/.claude/quota-probe}"
+probe_secs="${CLAUDE_QUOTA_PROBE_SECS:-${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-300}}"
 case "$probe_secs" in ''|*[!0-9]*|0) probe_secs=300 ;; esac
-case "$probe_at:$probe_week:$probe_reset" in
-  *[!0-9.:]*|*::*|:*|*:) ;;
-  *)
-    probe_age=$(( $(date +%s) - probe_at ))
-    if [ "$probe_age" -ge 0 ] && [ "$probe_age" -lt "$probe_secs" ]; then
-      week=$probe_week
-      week_reset=$probe_reset
-    fi
-    ;;
-esac
+probe_at=$(stat -f %m "$probe_stamp" 2>/dev/null)
+case "$probe_at" in ''|*[!0-9]*) probe_at=0 ;; esac
+if [ "$(( $(date +%s) - probe_at ))" -ge "$probe_secs" ] \
+   && [ -x "$HOME/.claude/hooks/quota-probe.sh" ]; then
+  nohup "$HOME/.claude/hooks/quota-probe.sh" >/dev/null 2>&1 </dev/null &
+fi
 # Past this, no terminal on the machine has re-confirmed the 5h figure and it is
 # no longer a fact, only the last thing anybody saw. It is still the best number
 # available -- so it is shown, but marked (see $STALE_5H use below).
@@ -1794,19 +1825,20 @@ if [ -n "$ctx" ]; then
     elif [ "$ctx_pct" -ge 65 ]; then
       pct_str="${ORANGE}${pct_str}${RESET}"
     fi
-    # On a 1M window the denominator is dropped entirely for Opus (see the
-    # is_opus note at the top) and the "• N%" goes with it: the pair "330K" and
-    # "a window you already know is 1M" IS the ratio, and a percentage would
-    # only restate it in a second unit. A non-Opus 1M window keeps "used/size",
-    # which is likewise self-evident. Smaller windows keep the explicit "• N%",
-    # where the ratio is not something the eye can do on sight.
+    # On a 1M window the denominator is dropped entirely for Opus and Fable
+    # (see the is_1m_family note at the top) and the "• N%" goes with it: the
+    # pair "330K" and "a window you already know is 1M" IS the ratio, and a
+    # percentage would only restate it in a second unit. Any other family on a
+    # 1M window keeps "used/size", which is likewise self-evident. Smaller
+    # windows keep the explicit "• N%", where the ratio is not something the
+    # eye can do on sight.
     # The token count is emitted as a PLACEHOLDER, not as final text: whether it
     # should sit still in blue or breathe orange/red depends on the prompt-cache
     # TTL and on how long you have been idle, and neither is known until the
     # transcript has been parsed a hundred lines below. Substituting at the end
     # keeps this block about layout and the pulse decision in one place with the
     # other cache logic, instead of splitting the rule across the file.
-    if [ "$size_label" = "1M" ] && [ -n "$is_opus" ]; then
+    if [ "$size_label" = "1M" ] && [ -n "$is_1m_family" ]; then
       model="$model @@CTX@@"
     elif [ "$size_label" = "1M" ]; then
       model="$model @@CTX@@/${size_label}"

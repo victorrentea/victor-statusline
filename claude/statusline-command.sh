@@ -38,19 +38,20 @@ effort=$(echo "$input" | jq -r '.effort.level // empty')
 # said yet what they are running on.
 model_name="$model"
 effort_raw="$effort"
-# --- Opus's window size is a constant, and a constant is not information ----
-# Opus only ever runs at 1M here, so "(1M)" in the name and "/1M" after the
-# token count repeat, on every render of every session, a fact that was never
-# in doubt. Both are dropped: the segment reads "Opus 5xh 330K", and 330K
-# against a window everyone in the room already knows is the whole message.
-# The label survives for every other family, because there it is a real
-# variable — Sonnet's "/200K" is a smaller window, and a small window is
-# exactly the case where "how much room is left" still needs its denominator
-# spelled out. (An Opus run at 200K would keep its label too: the suffix is
-# only stripped when it is the one that says nothing.)
-is_opus=""
+# --- The 1M families' window size is a constant, and a constant is not information
+# Opus and Fable only ever run at 1M here, so "(1M)" in the name and "/1M" after
+# the token count repeat, on every render of every session, a fact that was
+# never in doubt. Both are dropped: the segment reads "Opus 5xh 330K" or
+# "Fable 5.1h 330K", and 330K against a window everyone in the room already
+# knows is the whole message. The label survives for every other family,
+# because there it is a real variable — Sonnet's "/200K" is a smaller window,
+# and a small window is exactly the case where "how much room is left" still
+# needs its denominator spelled out. (An Opus or Fable run at 200K would keep
+# its label too: the suffix is only stripped when it is the one that says
+# nothing.)
+is_1m_family=""
 case "$model" in
-  *Opus*) is_opus=1; model="${model% (1M)}" ;;
+  *Opus*|*Fable*) is_1m_family=1; model="${model% (1M)}" ;;
 esac
 # Abbreviated to its initial(s), in LOWER case. The effort level is a mode you
 # set and then rarely change, so the bar only has to CONFIRM it, not teach it —
@@ -145,28 +146,27 @@ if [ -n "$merged" ]; then
   fi
 fi
 
-# A successful authenticated weekly probe is stronger evidence than any
-# session's frozen rate_limits payload. Keep its result authoritative for the
-# same five-minute interval the request gate uses before probing again; this
-# also prevents a restarted status line from immediately repainting a returned
-# allowance as the old cached 101%-used value.
-probe_record=$(sed -n '1p' "$HOME/.claude/quota-weekly-probe" 2>/dev/null)
-probe_at="" probe_week="" probe_reset=""
-IFS=' ' read -r probe_at probe_week probe_reset <<EOF
-$probe_record
-EOF
-probe_secs="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-300}"
+# The merge above is only as good as the freshest SESSION cache on the machine,
+# and a cache cannot notice an allowance that GREW: after a plan switch (Max 5x
+# -> 20x, 2026-09-11) every idle terminal kept re-publishing the old plan's 94%
+# and the bar read "6% left" for hours while the account was at 5% used -- see
+# the header of quota-state.sh. So every CLAUDE_QUOTA_PROBE_SECS (300) some
+# render kicks quota-probe.sh, which asks the account's usage endpoint and
+# writes BOTH windows into quota.json as the reading the merge lets no frozen
+# payload displace; it lands in $merged on the next render, so the 5h figure is
+# corrected by the same request and is fresh by construction (measured_at=now).
+# Kicked in the background and only when the stamp's mtime is old, so a render
+# costs one stat(2) here; the probe takes a lock, so a hundred renders racing
+# across the boundary send one request between them.
+probe_stamp="${CLAUDE_QUOTA_PROBE_FILE:-$HOME/.claude/quota-probe}"
+probe_secs="${CLAUDE_QUOTA_PROBE_SECS:-${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-300}}"
 case "$probe_secs" in ''|*[!0-9]*|0) probe_secs=300 ;; esac
-case "$probe_at:$probe_week:$probe_reset" in
-  *[!0-9.:]*|*::*|:*|*:) ;;
-  *)
-    probe_age=$(( $(date +%s) - probe_at ))
-    if [ "$probe_age" -ge 0 ] && [ "$probe_age" -lt "$probe_secs" ]; then
-      week=$probe_week
-      week_reset=$probe_reset
-    fi
-    ;;
-esac
+probe_at=$(stat -f %m "$probe_stamp" 2>/dev/null)
+case "$probe_at" in ''|*[!0-9]*) probe_at=0 ;; esac
+if [ "$(( $(date +%s) - probe_at ))" -ge "$probe_secs" ] \
+   && [ -x "$HOME/.claude/hooks/quota-probe.sh" ]; then
+  nohup "$HOME/.claude/hooks/quota-probe.sh" >/dev/null 2>&1 </dev/null &
+fi
 # Past this, no terminal on the machine has re-confirmed the 5h figure and it is
 # no longer a fact, only the last thing anybody saw. It is still the best number
 # available -- so it is shown, but marked (see $STALE_5H use below).
@@ -263,19 +263,20 @@ if [ -n "$ctx" ]; then
     elif [ "$ctx_pct" -ge 65 ]; then
       pct_str="${ORANGE}${pct_str}${RESET}"
     fi
-    # On a 1M window the denominator is dropped entirely for Opus (see the
-    # is_opus note at the top) and the "• N%" goes with it: the pair "330K" and
-    # "a window you already know is 1M" IS the ratio, and a percentage would
-    # only restate it in a second unit. A non-Opus 1M window keeps "used/size",
-    # which is likewise self-evident. Smaller windows keep the explicit "• N%",
-    # where the ratio is not something the eye can do on sight.
+    # On a 1M window the denominator is dropped entirely for Opus and Fable
+    # (see the is_1m_family note at the top) and the "• N%" goes with it: the
+    # pair "330K" and "a window you already know is 1M" IS the ratio, and a
+    # percentage would only restate it in a second unit. Any other family on a
+    # 1M window keeps "used/size", which is likewise self-evident. Smaller
+    # windows keep the explicit "• N%", where the ratio is not something the
+    # eye can do on sight.
     # The token count is emitted as a PLACEHOLDER, not as final text: whether it
     # should sit still in blue or breathe orange/red depends on the prompt-cache
     # TTL and on how long you have been idle, and neither is known until the
     # transcript has been parsed a hundred lines below. Substituting at the end
     # keeps this block about layout and the pulse decision in one place with the
     # other cache logic, instead of splitting the rule across the file.
-    if [ "$size_label" = "1M" ] && [ -n "$is_opus" ]; then
+    if [ "$size_label" = "1M" ] && [ -n "$is_1m_family" ]; then
       model="$model @@CTX@@"
     elif [ "$size_label" = "1M" ]; then
       model="$model @@CTX@@/${size_label}"

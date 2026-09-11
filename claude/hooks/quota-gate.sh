@@ -12,14 +12,16 @@
 #
 # `rate_limits` in the hook payload is cached, so it cannot itself discover a
 # mid-window allowance change while every request is parked. The periodic probe
-# calls the same authenticated usage endpoint as Claude Code's Usage screen and
-# republishes its seven-day reading into the shared quota state. A machine-wide
-# attempt timestamp prevents every parked terminal from probing independently.
+# (quota-probe.sh, shared with the status line) calls the same authenticated
+# usage endpoint as Claude Code's Usage screen and writes both windows into the
+# shared quota state as the reading no frozen cache can displace; this hook
+# only decides WHEN to run it and reads the state back. The probe's own stamp
+# and lock keep every parked terminal from probing independently.
 #
 # Env knobs: CLAUDE_QUOTA_MIN_PCT (default 5),
 # CLAUDE_WEEKLY_QUOTA_MIN_PCT (default 1), CLAUDE_QUOTA_MAX_SLEEP (604920),
-# CLAUDE_WEEKLY_QUOTA_PROBE_SECS (default 300),
-# CLAUDE_QUOTA_GATE=0 to disable.
+# CLAUDE_QUOTA_PROBE_SECS (default 300; CLAUDE_WEEKLY_QUOTA_PROBE_SECS is an
+# accepted alias), CLAUDE_QUOTA_GATE=0 to disable.
 
 INPUT=$(cat)                       # always drain stdin, else the writer gets SIGPIPE
 
@@ -28,39 +30,13 @@ INPUT=$(cat)                       # always drain stdin, else the writer gets SI
 THRESH="${CLAUDE_QUOTA_MIN_PCT:-5}"
 WEEK_THRESH="${CLAUDE_WEEKLY_QUOTA_MIN_PCT:-1}"
 MAXSLEEP="${CLAUDE_QUOTA_MAX_SLEEP:-604920}"
-PROBE_SECS="${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-300}"
+PROBE_SECS="${CLAUDE_QUOTA_PROBE_SECS:-${CLAUDE_WEEKLY_QUOTA_PROBE_SECS:-300}}"
 LOG="$HOME/.claude/quota-gate.log"
 PARKDIR="$HOME/.claude/quota-park"
-PROBE_STAMP="${CLAUDE_WEEKLY_QUOTA_PROBE_FILE:-$HOME/.claude/quota-weekly-probe}"
+PROBE_STAMP="${CLAUDE_QUOTA_PROBE_FILE:-$HOME/.claude/quota-probe}"
+PROBE="$HOME/.claude/hooks/quota-probe.sh"
 
 case "$PROBE_SECS" in ''|*[!0-9]*|0) PROBE_SECS=300 ;; esac
-
-iso_to_epoch() {
-  # macOS date(1) cannot parse fractional seconds or the colon in +00:00.
-  _iso=$(printf '%s' "$1" | sed -E 's/\.[0-9]+([+-][0-9][0-9]):([0-9][0-9])$/\1\2/')
-  date -j -f '%Y-%m-%dT%H:%M:%S%z' "$_iso" +%s 2>/dev/null
-}
-
-probe_weekly() {
-  if [ -n "${CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND:-}" ]; then
-    "$CLAUDE_WEEKLY_QUOTA_PROBE_COMMAND"
-    return
-  fi
-
-  _credentials=$(security find-generic-password -s 'Claude Code-credentials' -w 2>/dev/null) || return 1
-  _token=$(printf '%s' "$_credentials" | jq -er '.claudeAiOauth.accessToken' 2>/dev/null) || return 1
-  _body=$(curl -fsS --max-time 15 \
-    -H "Authorization: Bearer $_token" \
-    -H 'anthropic-beta: oauth-2025-04-20' \
-    -H 'User-Agent: claude-code/quota-gate' \
-    'https://api.anthropic.com/api/oauth/usage' 2>/dev/null) || return 1
-  _probe_used=$(printf '%s' "$_body" | jq -r '.seven_day.utilization // empty' 2>/dev/null)
-  _probe_iso=$(printf '%s' "$_body" | jq -r '.seven_day.resets_at // empty' 2>/dev/null)
-  case "$_probe_used" in ''|*[!0-9.]*) return 1 ;; esac
-  _probe_reset=$(iso_to_epoch "$_probe_iso")
-  case "$_probe_reset" in ''|*[!0-9]*) _probe_reset=0 ;; esac
-  printf '%s %s\n' "$_probe_used" "$_probe_reset"
-}
 
 STALE="${CLAUDE_QUOTA_STALE_SECS:-900}"
 JITTER="${CLAUDE_QUOTA_JITTER:-90}"
@@ -106,59 +82,31 @@ while :; do
       ;;
   esac
 
-  # A low cached weekly reading is rechecked live once the shared attempt clock
-  # is five minutes old. `measured_at` is deliberately irrelevant here: a
-  # restarted status line can mistake its first frozen payload for a new response.
-  # Writing the attempt before curl makes concurrent sleepers converge on the
-  # same next deadline even when the network request fails. A successful result
-  # stays in the same file so all hooks trust it until the next periodic probe.
+  # A low cached weekly reading is rechecked live once the shared probe stamp is
+  # PROBE_SECS old. `measured_at` is deliberately irrelevant here: a restarted
+  # status line can mistake its first frozen payload for a new response. The
+  # probe owns the stamp, the lock and the write into quota.json (where the
+  # merge keeps its reading safe from frozen session payloads until the next
+  # poll), so this hook only runs it and reads the state back. A stamp still
+  # `pending` means another hook's request is in flight.
   probe_pending=0
   if [ "$go7" = 1 ]; then
     probe_record=$(sed -n '1p' "$PROBE_STAMP" 2>/dev/null)
-    probe_last="" probe_cached_used="" probe_cached_reset=""
-    IFS=' ' read -r probe_last probe_cached_used probe_cached_reset <<EOF
-$probe_record
-EOF
-    case "$probe_last" in
-      ''|*[!0-9]*) probe_last=0 ;;
-    esac
-    if [ "$probe_last" -gt 0 ] && [ "$now" -lt "$((probe_last + PROBE_SECS))" ]; then
-      case "$probe_cached_used" in
-        pending) probe_pending=1 ;;
-        ''|*[!0-9.]*) ;;
-        *)
-          case "$probe_cached_reset" in ''|*[!0-9]*|0) probe_cached_reset=$resets7 ;; esac
-          used7=$probe_cached_used
-          resets7=$probe_cached_reset
-          go7=$(awk -v u="$used7" -v t="$WEEK_THRESH" -v r="$resets7" -v n="$now" \
-            'BEGIN{ print ((100 - u) <= t && r > n) ? 1 : 0 }')
-          ;;
-      esac
-    elif [ "$now" -ge "$((probe_last + PROBE_SECS))" ]; then
-      mkdir -p "$(dirname "$PROBE_STAMP")"
-      printf '%s pending' "$now" > "$PROBE_STAMP"
-      live7=$(probe_weekly 2>/dev/null)
-      probe_used=$(printf '%s' "$live7" | cut -d' ' -f1)
-      probe_reset=$(printf '%s' "$live7" | cut -d' ' -f2)
-      case "$probe_used" in
-        ''|*[!0-9.]*)
-          printf '%s failed' "$now" > "$PROBE_STAMP"
-          printf '%s probe-failed session=%s window=seven_day\n' \
-            "$(date '+%Y-%m-%dT%H:%M:%S')" "$session" >> "$LOG"
-          ;;
-        *)
-          case "$probe_reset" in ''|*[!0-9]*|0) probe_reset=$resets7 ;; esac
-          printf '%s %s %s' "$now" "$probe_used" "$probe_reset" > "$PROBE_STAMP"
-          "$HOME/.claude/hooks/quota-state.sh" publish \
-            -1 0 "$probe_used" "$probe_reset" 1 >/dev/null 2>&1
-          used7=$probe_used
-          resets7=$probe_reset
-          go7=$(awk -v u="$used7" -v t="$WEEK_THRESH" -v r="$resets7" -v n="$now" \
-            'BEGIN{ print ((100 - u) <= t && r > n) ? 1 : 0 }')
-          printf '%s probe session=%s window=seven_day used=%s%% gate=%s\n' \
-            "$(date '+%Y-%m-%dT%H:%M:%S')" "$session" "$used7" "$go7" >> "$LOG"
-          ;;
-      esac
+    probe_last=$(printf '%s' "$probe_record" | cut -d' ' -f1)
+    probe_status=$(printf '%s' "$probe_record" | cut -d' ' -f2)
+    case "$probe_last" in ''|*[!0-9]*) probe_last=0 ;; esac
+    if [ "$now" -lt "$((probe_last + PROBE_SECS))" ]; then
+      [ "$probe_status" = pending ] && probe_pending=1
+    else
+      "$PROBE" >/dev/null 2>&1
+      state7=$("$HOME/.claude/hooks/quota-state.sh" read7 2>/dev/null)
+      used7=$(printf   '%s' "$state7" | cut -d' ' -f1)
+      resets7=$(printf '%s' "$state7" | cut -d' ' -f2)
+      go7=$(awk -v u="$used7" -v t="$WEEK_THRESH" -v r="$resets7" -v n="$now" \
+        'BEGIN{ print ((100 - u) <= t && r > n) ? 1 : 0 }')
+      [ "$(sed -n '1p' "$PROBE_STAMP" 2>/dev/null | cut -d' ' -f2)" = pending ] && probe_pending=1
+      printf '%s probe session=%s window=seven_day used=%s%% gate=%s\n' \
+        "$(date '+%Y-%m-%dT%H:%M:%S')" "$session" "$used7" "$go7" >> "$LOG"
     fi
   fi
 
