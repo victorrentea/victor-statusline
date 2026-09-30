@@ -108,20 +108,42 @@ if [ -n "$effort" ]; then
     *)      model="${model}${effort}" ;;
   esac
 fi
-# Input $/MTok for the model in play, so the cache-miss figure below is this
-# session's money and not a generic one. Read here, off the untouched display
-# name, because $model is rewritten further down (effort suffix, size label,
-# the @@CTX@@ placeholder) and by then the family is no longer reliably in it.
-case "$model" in
-  *Fable*|*Mythos*) in_rate=10 ;;
-  *Opus*)           in_rate=5 ;;
-  *Sonnet*)         in_rate=3 ;;
-  *Haiku*)          in_rate=1 ;;
-  *)                in_rate=5 ;;
+# Price of the model in play, so the cache-miss figures below are this session's
+# money and not a generic one: $in_rate is base input $/MTok, $rd_mult the cache
+# READ multiplier. Writes are the same everywhere (1.25x for 5m, 2x for 1h); the
+# read is NOT — 0.1x is the old universal rule, but Opus 5.5 reads at 0.05x and
+# Fable/Mythos 5.1 at 0.025x. From the pricing page, 2026-09-30:
+#   Opus 5.5  $4  in, $5 5m-write, $8 1h-write, $0.20 read, $20 out
+#   Opus 5/4.5-4.8 $5 · Sonnet 5/5.5 $2 · Sonnet 4.x $3 · Haiku 4.5 $1
+#   Fable 5/5.1, Mythos $10 — 1M context at the standard rate, no long-context
+#   premium on any of them.
+# Matched on the model ID first (it names the exact version), then on the
+# untouched display name ($model_name: $model already has the effort letter glued
+# on, "Opus 5.5h", and further down grows a size label and a placeholder).
+# ORDER MATTERS: "opus-5" is a prefix of "opus-5-5", so every x.5 comes before
+# its x. A single "*Opus*) 5" once priced Opus 5.5 at Opus 5's $5 (25% high) and
+# its reads at 0.1x instead of 0.05x — the whole miss figure was ~22% too dear.
+model_id=$(echo "$input" | jq -r '.model.id // empty')
+rd_mult=0.1
+case "$model_id $model_name" in
+  *fable-5-1*|*mythos-5-1*|*"Fable 5.1"*|*"Mythos 5.1"*) in_rate=10; rd_mult=0.025 ;;
+  *fable*|*mythos*|*Fable*|*Mythos*)                     in_rate=10 ;;
+  *opus-5-5*|*"Opus 5.5"*)                               in_rate=4;  rd_mult=0.05 ;;
+  *opus-4-1*|*opus-4-0*|*opus-4-2025*|*"Opus 4.1"*)      in_rate=15 ;;
+  *opus*|*Opus*)                                         in_rate=5 ;;
+  *sonnet-5*|*"Sonnet 5"*)                               in_rate=2 ;;
+  *sonnet*|*Sonnet*)                                     in_rate=3 ;;
+  *haiku-3*|*"Haiku 3"*)                                 in_rate=0.8 ;;
+  *haiku*|*Haiku*)                                       in_rate=1 ;;
+  *)                                                     in_rate=5 ;;
 esac
 
 ctx=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
 total=$(echo "$input" | jq -r '.context_window.context_window_size // empty')
+# The exact prompt size of the last request (input + cache write + cache read).
+# used_percentage is Math.round()ed by Claude Code, so on a 1M window it moves in
+# 10K steps; this is what the miss forecast is priced off when it is present.
+ctx_in=$(echo "$input" | jq -r '.context_window.total_input_tokens // empty')
 five=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
 week=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
@@ -612,7 +634,7 @@ abbr_tok() {
 # off the API usage — 300s or 3600s, see below), not a hardcoded 5 minutes:
 #   orange in the last 20% before the TTL (spend it or lose it),
 #   red once the TTL has passed (the prefix is gone; your next message pays the
-#   full 1.25x cache-WRITE price again instead of the 0.1x read price).
+#   cache-WRITE price again — 1.25x or 2x — instead of the read price, $rd_mult).
 # Concretely, on a 5-minute TTL: "-4m" is >= 240s and still under 300s, so it
 # goes ORANGE — the prefix is alive and you have about a minute to use it.
 # "-51m" is far past 300s, so it goes RED — that cache is already gone.
@@ -705,21 +727,32 @@ fmt_ttl() {
 # What crossing the TTL just cost, in dollars, on the ONLY question that has a
 # defensible answer: the cached prefix has to be written again at the cache-WRITE
 # price instead of being read at the cache-READ price, so the loss is the spread
-# between the two multipliers over the whole context.
+# between the two multipliers over the tokens that had to be rebuilt.
 #
-#   5m TTL:  write 1.25x, read 0.1x -> 1.15x base input, per token
-#   1h TTL:  write 2.00x, read 0.1x -> 1.90x base input, per token
+#   miss $ = tokens x $in_rate x (write - $rd_mult)
+#   write = 1.25x on a 5m TTL, 2x on a 1h one; read = 0.1x, but 0.05x on Opus 5.5
+#   and 0.025x on Fable/Mythos 5.1 (see $rd_mult at the top).
+#   Opus 5.5, 1h TTL: 4 x (2 - 0.05) = $7.80 per MTok rebuilt.
+#
+# The spread is not "1.9x of whatever the input rate is": with the read at 0.05x
+# it is 1.95x, and on the model that bills $4 — not the $5 the old flat Opus rate
+# assumed — so the flat formula overstated every Opus 5.5 miss by ~22% before
+# counting anything else.
 #
 # The 1h cache costs nearly twice as much to lose as the 5m one, which is the
 # opposite of the intuition that a longer TTL is strictly the safer setting —
 # reason enough to print the number rather than leave it to be guessed at.
-# Takes the prefix size in tokens, defaulting to the whole current context. The
-# argument exists because the two callers price two different things: the idle
-# clock is forecasting the loss of the context you are sitting on RIGHT NOW,
-# while the "(N⏱)" tag is pricing a rebuild that ALREADY happened,
-# whose size is the prompt that was cached at the time ($prev_prompt) — by then
-# the context has grown past it, so charging today's size to yesterday's miss
-# would overstate it.
+#
+# $1 = tokens that are (or were) rebuilt; $2 = the write multiplier they were
+# (or will be) written at. The two callers price two different things:
+#   * the idle clock FORECASTS losing what you are sitting on right now:
+#     $fc_tokens = the live prompt MINUS the part a cold start still reads back
+#     (the system prompt and tools, which other sessions keep warm — measured
+#     25-28K on every real miss here), at the session's own TTL;
+#   * the "(N⏱)" tag prices a rebuild that ALREADY happened, off the usage of
+#     the request that paid it: what it wrote (never more than what was cached
+#     before, never the new message on top), at the 5m/1h split it was billed at.
+# Omit both and it is the forecast.
 #
 # Shown from the moment the cache is at risk (orange, still savable) as well as
 # past the TTL, at any size. Naming the price while the prefix is still alive is
@@ -732,21 +765,21 @@ fmt_ttl() {
 # the displayed price must be the same quantity — a gate computed one way and a
 # price printed another is how you get a bar that blinks while showing a number
 # below its own stated floor.
+ttl_wmult() { if [ "${ttl_secs:-300}" -ge 3600 ]; then echo 2; else echo 1.25; fi; }
 miss_usd() {
-  _mult=1.15
-  [ "${ttl_secs:-300}" -ge 3600 ] && _mult=1.9
-  awk -v t="${1:-${used_tokens:-0}}" -v r="${in_rate:-5}" -v m="$_mult" \
-    'BEGIN{ printf "%.4f", t/1000000 * r * m }'
+  awk -v t="${1:-${fc_tokens-${used_tokens:-0}}}" -v r="${in_rate:-5}" \
+      -v w="${2:-$(ttl_wmult)}" -v rd="${rd_mult:-0.1}" \
+    'BEGIN{ if (t < 0) t = 0; printf "%.4f", t/1000000 * r * (w - rd) }'
 }
 # The bare figure, no currency sign: the turn-cost segment prints its own "$"
 # (or the flower standing in for it) at the head of the cell and then folds the
 # miss in as a parenthetical — "$5.2(2.7⏱)" — so a second "$" inside it would
 # be claiming a second unit for the same money.
 miss_num() {
-  awk -v c="$(miss_usd "$1")" \
+  awk -v c="$(miss_usd "$@")" \
     'BEGIN{ printf (c >= 10 ? "%.0f" : "%.1f"), c }'
 }
-miss_cost() { printf '$%s' "$(miss_num "$1")"; }
+miss_cost() { printf '$%s' "$(miss_num "$@")"; }
 # One decimal, always TRUNCATED, never rounded — the same rule the session total
 # obeys, applied to the turn figure sitting next to it. Both figures have to be
 # cut the same way or the "⊂" starts lying: $3.26 of session spent entirely in
@@ -756,7 +789,7 @@ miss_cost() { printf '$%s' "$(miss_num "$1")"; }
 trunc1() { awk -v v="${1:-0}" 'BEGIN{ printf "%.1f", int(v*10 + 1e-9)/10 }'; }
 # Is the loss big enough to MOVE for? The gate used to be a flat 100K tokens,
 # which is the wrong unit: what makes a miss worth interrupting you over is the
-# MONEY, and the same 100K is ~19c of Haiku and ~$1.90 of Opus-on-a-1h-TTL.
+# MONEY, and the same 100K on a 1h TTL is ~19c of Haiku and ~78c of Opus 5.5.
 # Testing the dollar figure the bar is about to print also makes the rule
 # self-evident on screen — you see "⇒miss+=$2.1" blinking next to a "⇒miss+=$1.4"
 # that does not, and the reason is the number itself, not a token count you would
@@ -764,7 +797,7 @@ trunc1() { awk -v v="${1:-0}" 'BEGIN{ printf "%.1f", int(v*10 + 1e-9)/10 }'; }
 #   export CLAUDE_MISS_FLOOR=5
 MISS_FLOOR="${CLAUDE_MISS_FLOOR:-2}"
 miss_big() {
-  awk -v c="$(miss_usd "$1")" -v f="$MISS_FLOOR" 'BEGIN{ exit !(c > f) }'
+  awk -v c="$(miss_usd "$@")" -v f="$MISS_FLOOR" 'BEGIN{ exit !(c > f) }'
 }
 
 # Which side of the prompt-cache TTL is this idle gap on? The single source of
@@ -831,6 +864,31 @@ def isprompt: (.type=="user") and (.isSidechain!=true) and (.isMeta!=true)
 | ([ $all[0:(($lu // 0))][] | select(.type=="assistant" and .requestId!=null and (.isSidechain!=true)) ] | last | .message.usage) as $pu
 | (if $fu == null then -1 else ($fu.cache_read_input_tokens // 0) end) as $cr
 | (ptoks($pu)) as $prev
+# What that first request WROTE, and into which bucket: on a miss this is the
+# rebuild, and the 5m/1h split is what it was billed at (2x vs 1.25x). $fp is
+# its whole prompt, which is how a COMPACTION is told apart from a miss: after
+# /compact the prompt shrinks to a fraction of $prev and reads back little of
+# it, exactly like an expired cache, but nothing that was cached is being
+# rebuilt; the old prefix was thrown away on purpose. Real ones, 2026-09-27:
+# 976K -> 77K and 511K -> 71K, each of which the bar priced as a $7-9 miss on a
+# turn that cost about a dollar.
+| (($fu // {}).cache_creation_input_tokens // 0) as $fcc
+| (($fu // {}).cache_creation // {}) as $fsplit
+| ($fsplit.ephemeral_1h_input_tokens // 0) as $fc1h
+| ($fsplit.ephemeral_5m_input_tokens // 0) as $fc5m
+| (ptoks($fu)) as $fp
+# The part of the prompt a COLD start still reads back: the cache_read of the
+# latest request that found no prefix of its own, i.e. read back less than half
+# of its own prompt (a fresh session, the first request after a miss or after a
+# compaction). What it reads is the system prompt and tool list, which every
+# session shares and keeps warm, so it survives an expired TTL and does not
+# belong in the forecast of the loss. Judged against the request OWN prompt, not
+# by position: a session resumed inside the TTL opens with a WARM read of the
+# whole prefix, and taking that as the survivor would forecast a $0 loss. No
+# cold request seen yet -> 0, and the forecast prices the whole prompt.
+| ([ $all[] | select(.type=="assistant" and .requestId!=null and (.isSidechain!=true))
+     | .message.usage | select(((.cache_read_input_tokens // 0) * 2) < ptoks(.))
+     | (.cache_read_input_tokens // 0) ] | last // 0) as $keep
 # TTL is not guesswork: the API reports which ephemeral bucket the cache write
 # went into (`cache_creation.ephemeral_5m_input_tokens` vs `..._1h_...`), so the
 # session states its own TTL. 0 = nothing written yet / unknown.
@@ -858,17 +916,18 @@ def isprompt: (.type=="user") and (.isSidechain!=true) and (.isMeta!=true)
 | (($ccs | map(.h + .m) | max) // 0) as $ccmax
 | ([ $ccs[] | select((.h + .m) * 4 >= $ccmax) ] | last) as $cc
 | (if $cc == null then 0 elif ($cc.h > $cc.m) then 3600 else 300 end) as $ttl
-| "\($total)\t\($turn)\t\($lu_uuid)\t\($last_ts // "")\t\(if $idle then 1 else 0 end)\t\($cr)\t\($prev)\t\($ttl)"'
+| "\($total)\t\($turn)\t\($lu_uuid)\t\($last_ts // "")\t\(if $idle then 1 else 0 end)\t\($cr)\t\($prev)\t\($ttl)\t\($fcc)\t\($fc1h)\t\($fc5m)\t\($fp)\t\($keep)"'
   sid=$(basename "$tp" .jsonl)
   # The jq -s above slurps the ENTIRE transcript (often multi-MB) — far too
   # costly to re-run on every 1s idle refresh. Cache its single-line output and
   # reuse it while the transcript file is untouched (same mtime); any new
   # message bumps the mtime and forces a fresh parse. This keeps
   # refreshInterval=1 cheap so the idle "-N" clock can tick per-second.
-  # -v2: the cached line grew three fields (cache read / previous prompt size /
-  # TTL). The cache is keyed by mtime alone, so a v1 line would be served as
-  # valid until the transcript next changes; the version in the name retires it.
-  cache="/tmp/claude-statusline-cache-v2-${sid}.txt"
+  # -v3: the cached line grew five more fields (the first request's write and
+  # its 5m/1h split, its prompt size, the cold-start read). The cache is keyed by
+  # mtime alone, so an older line would be served as valid until the transcript
+  # next changes; the version in the name retires it.
+  cache="/tmp/claude-statusline-cache-v3-${sid}.txt"
   mtime=$(file_mtime "$tp")
   cached_mtime=""; tok_line=""
   if [ -f "$cache" ]; then
@@ -887,6 +946,11 @@ def isprompt: (.type=="user") and (.isSidechain!=true) and (.isMeta!=true)
   turn_cache_read=$(printf '%s' "$tok_line" | cut -f6)
   prev_prompt=$(printf '%s' "$tok_line" | cut -f7)
   ttl_secs=$(printf '%s' "$tok_line" | cut -f8)
+  first_write=$(printf '%s' "$tok_line" | cut -f9)
+  first_w1h=$(printf '%s' "$tok_line" | cut -f10)
+  first_w5m=$(printf '%s' "$tok_line" | cut -f11)
+  first_prompt=$(printf '%s' "$tok_line" | cut -f12)
+  keep_tokens=$(printf '%s' "$tok_line" | cut -f13)
   [ -n "$total_tok" ] || total_tok=0
   [ -n "$turn_tok" ] || turn_tok=0
 
@@ -999,9 +1063,10 @@ if [ -n "$spend_ready" ]; then
   # the total. Glued with no space so the two are one cell-group: a parenthetical
   # touching its number is a qualifier, one with a space in front is a new item.
   # The question it answers is the one you can't see
-  # from the price alone: did this turn reuse the cached prefix at 0.1x, or did
-  # it rebuild it at 1.25x? A rebuilt 200K prefix is roughly a dollar of pure
-  # waste, and it is invisible unless something points at it.
+  # from the price alone: did this turn reuse the cached prefix at the read
+  # price, or did it rebuild it at the write price? A rebuilt 200K prefix on Opus
+  # 5.5 at a 1h TTL is $1.56 of pure waste, and it is invisible unless something
+  # points at it.
   #
   # Deterministic, not guessed: compare what the turn's first request READ back
   # ($turn_cache_read) with what the request before it had cached
@@ -1011,18 +1076,40 @@ if [ -n "$spend_ready" ]; then
   #   * $prev_prompt < 5000 -> there was nothing worth caching yet (and the
   #     session's very first turn, where a miss is unavoidable, has $prev = 0);
   #   * $turn_cache_read = -1 -> the turn has issued no request yet, so there is
-  #     no verdict to give. Absence of data must not read as a miss.
+  #     no verdict to give. Absence of data must not read as a miss;
+  #   * $first_prompt < half of $prev_prompt -> the prompt SHRANK: a /compact
+  #     (or a rewind) replaced the old prefix on purpose. Reading little of it
+  #     back is the point, not a lost cache — see $fp in the jq program.
   case "$turn_cache_read" in ''|*[!0-9-]*) turn_cache_read=-1 ;; esac
   case "$prev_prompt" in ''|*[!0-9]*) prev_prompt=0 ;; esac
   case "$ttl_secs" in ''|*[!0-9]*|0) ttl_secs=300 ;; esac
+  case "$first_write"  in ''|*[!0-9]*) first_write=0 ;; esac
+  case "$first_w1h"    in ''|*[!0-9]*) first_w1h=0 ;; esac
+  case "$first_w5m"    in ''|*[!0-9]*) first_w5m=0 ;; esac
+  case "$first_prompt" in ''|*[!0-9]*) first_prompt=0 ;; esac
+  case "$keep_tokens"  in ''|*[!0-9]*) keep_tokens=0 ;; esac
+  # The forecast the idle clock prices: the live prompt minus what a cold start
+  # still reads back. Exact size when Claude Code sends it, else the rounded %.
+  _live=${ctx_in:-${used_tokens:-0}}
+  case "$_live" in ''|*[!0-9]*) _live=${used_tokens:-0} ;; esac
+  fc_tokens=$((_live - keep_tokens)); [ "$fc_tokens" -lt 0 ] && fc_tokens=0
   miss_tag=""
   if [ "$turn_cache_read" -ge 0 ] && [ "$prev_prompt" -ge 5000 ] \
-     && [ "$turn_cache_read" -lt $((prev_prompt / 2)) ]; then
+     && [ "$turn_cache_read" -lt $((prev_prompt / 2)) ] \
+     && [ $((first_prompt * 2)) -ge "$prev_prompt" ]; then
     # With the price attached, not just the fact: a bare "⏱" makes you do the
     # subtraction yourself to find out whether the miss was most of the turn or a
     # rounding error on it — and the two cases call for completely different
-    # reactions. Priced off $prev_prompt, the prefix that actually had to be
-    # rebuilt.
+    # reactions.
+    #
+    # Priced off the request that PAID it, not off $prev_prompt. What was lost is
+    # the part of the old prefix that was written again instead of read: the
+    # previous prompt minus what this request still read back (the ~25K system
+    # prompt and tools survive every expiry), and never more than it actually
+    # wrote (its write also carries the new message, which a hit pays for too).
+    # At the write multiplier it was billed at, from its own 5m/1h split. The
+    # old "whole $prev_prompt at a flat rate" printed "$1.6(2.2⏱)" on a real
+    # Opus 5.5 turn: a miss dearer than the turn it was part of.
     #
     # No "$" on the inner figure: the turn price it hangs off already printed one
     # (or the flower standing in for it), and both numbers are the same money in
@@ -1039,7 +1126,11 @@ if [ -n "$spend_ready" ]; then
     # of clock", one quantity with its kind named after it, which is exactly what
     # it is — and it puts the two numbers, the ones you actually compare, nearer
     # each other than any leading label can.
-    miss_tag="${RED}($(miss_num "$prev_prompt")⏱)${RESET}"
+    _lost=$((prev_prompt - turn_cache_read))
+    [ "$first_write" -lt "$_lost" ] && _lost=$first_write
+    _wm=$(awk -v h="$first_w1h" -v m="$first_w5m" -v d="$(ttl_wmult)" \
+      'BEGIN{ print (h + m > 0) ? (h*2 + m*1.25) / (h + m) : d }')
+    [ "$_lost" -gt 0 ] && miss_tag="${RED}($(miss_num "$_lost" "$_wm")⏱)${RESET}"
   fi
   hookstate="/tmp/claude-turn-${session_id:-default}.state"
   if [ -f "$hookstate" ]; then
@@ -1054,13 +1145,19 @@ if [ -n "$spend_ready" ]; then
   fi
   # Displayed cost + label. Three states, driven by "am I working" AND by whether
   # the current turn has actually billed yet (turn_cost>0):
-  #   working, nothing billed yet (you just hit Enter) -> the animated flower in
-  #     place of the figure ("✻ ⊂ $12"). The previous turn's price vanishes the
+  #   working, nothing billed yet (you just hit Enter) -> SEVEN STARS in place
+  #     of the figure ("★★★★★★★ ⊂ $12"). The previous turn's price vanishes the
   #     instant you press Enter: for the 10-20s before the first response lands
   #     there is no current cost, and leaving the old number on screen means the
   #     one figure you look at is silently stale — you read "$1.4" and attribute
   #     it to the thing you just asked for. Better an empty slot that is honestly
-  #     empty; the flower says "counting has started, no number yet".
+  #     empty. It used to be ONE bare flower, and one flower is exactly the glyph
+  #     that, a second later, stands in for the "$" in front of the live figure —
+  #     so "no number yet" and "a number is on its way" looked the same at a
+  #     glance (2026-09-30, Victor: never a single flower when the turn has just
+  #     started). A row of stars is a different SHAPE, not a different frame, so
+  #     the empty state cannot be misread as the first beat of the figure; and
+  #     it is a fixed string, never the flower repeated to pad the slot.
   #   working AND the current turn has cost -> live figure with the animated
   #     flower STANDING IN FOR THE "$" ("✻0.7 ⊂ $12"). The currency sign is the
   #     one cell in the segment that carries no information — you know the units
@@ -1111,7 +1208,7 @@ if [ -n "$spend_ready" ]; then
       *) flower="✽"; bloom=$BLOOM4 ;;
     esac
     # The flower stands in for the "$". No cost yet on this turn => print no
-    # figure at all and let the bare flower open the segment.
+    # figure at all; the seven stars below hold the slot instead.
     if [ "$(echo "$turn_cost > 0" | bc -l)" = "1" ]; then
       turn_disp=$(trunc1 "$turn_cost")
       turn_money=$(printf '%s%s%s%s' "$bloom" "$flower" "$RESET" "$turn_disp")
@@ -1119,7 +1216,10 @@ if [ -n "$spend_ready" ]; then
       turn_money=""
     fi
     turn_suffix=""
-    lone="${bloom}${flower}${RESET}"
+    # ★ (U+2605), not one of the bloom glyphs: ✢ ✳ ✻ ✽ are the flower, and the
+    # placeholder must not read as a flower. Exactly seven, one cell each. The
+    # hue still breathes with the bloom, so the bar says "working" as before.
+    lone="${bloom}★★★★★★★${RESET}"
   else
     # idle after a finished turn -> that turn's cost is in turn_cost; just after
     # Enter (turn_cost==0) -> fall back to the previous turn's cost.
@@ -1170,13 +1270,16 @@ if [ -n "$spend_ready" ]; then
   if [ -n "$turn_money" ]; then
     spend_seg="${turn_money}${miss_tag}${turn_suffix} ${sep} ${total_money}"
   else
-    # Nothing billed yet: the flower stands in for the missing figure, but the
-    # "⊂" stays ("✻ ⊂ $12"). Dropping it was the earlier rule and it made the
+    # Nothing billed yet: the stars stand in for the missing figure, but the
+    # "⊂" stays ("★★★★★★★ ⊂ $12"). Dropping it was the earlier rule and it made the
     # segment jump: the moment the first cost landed, "⊂" appeared out of nowhere
     # and shoved the total two cells right, so the one number you were watching
     # moved exactly when it started mattering. Keeping the separator through the
-    # empty state holds every cell in place, and it is still true — whatever this
-    # turn ends up costing IS contained in that total, figure or no figure.
+    # empty state keeps the segment's shape, and it is still true — whatever this
+    # turn ends up costing IS contained in that total, figure or no figure. (The
+    # seven stars are three cells wider than "✻0.7", so the total does step left
+    # once when the first cost lands: a one-time settle, the price of a
+    # placeholder that cannot be mistaken for the figure.)
     spend_seg="${lone} ${sep} ${total_money}"
   fi
 fi

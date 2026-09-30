@@ -441,6 +441,122 @@ out=$(printf '%s' "$payload" | sh "$SCRIPT")
 assert_not_contains "no subagents: no chip, no placeholder" "$out" "+{"
 assert_not_contains "no subagents: placeholder is resolved" "$out" "@@SUB@@"
 
+# --- Case: the prompt-cache miss is priced at the model's own rates ---------
+# Recorded usage from a real Opus 5.5 turn (2026-09-30, a 1h-TTL session that
+# came back after an expired cache): the request before the turn had a 227,473
+# token prompt; the turn's one request read back only the 25,144-token system
+# prefix and rewrote 202,810 tokens into the 1h bucket. At the pricing page's
+# Opus 5.5 rates ($4 in, $8 1h-write, $0.20 read, $20 out) that request cost
+#   2*4 + 216*20 + 25144*0.20 + 202810*8 = $1.632 (per 1e6)
+# and the miss inside it -- the old prefix written instead of read -- was
+#   (227473 - 25144) * (8 - 0.20) / 1e6 = $1.58.
+# The bar used to print "$1.6(2.2⏱)": Opus at a flat $5, reads at 0.1x, and the
+# whole previous prompt counted as lost -- a miss dearer than its own turn.
+# usage_line <requestId> <in> <read> <write> <w1h> <w5m> <out> <stop> <HH:MM>
+usage_line() {
+  printf '{"type":"assistant","uuid":"a-%s","requestId":"%s","timestamp":"2026-09-20T%s:00.000Z","message":{"role":"assistant","stop_reason":"%s","content":[],"usage":{"input_tokens":%s,"cache_read_input_tokens":%s,"cache_creation_input_tokens":%s,"cache_creation":{"ephemeral_1h_input_tokens":%s,"ephemeral_5m_input_tokens":%s},"output_tokens":%s}}}\n' \
+    "$1" "$1" "$9" "$8" "$2" "$3" "$4" "$5" "$6" "$7"
+}
+prompt_line() {
+  printf '{"type":"user","uuid":"%s","timestamp":"2026-09-20T%s:00.000Z","message":{"role":"user","content":"%s"}}\n' "$1" "$2" "$1"
+}
+# cache_turn <session> <model id> <display name> <prev usage...> -- <cur usage...>
+# Two renders, as Claude Code does: the turn price is the delta of total_cost_usd.
+render_twice() {  # 1=session 2=model-id 3=display 4=cost-before 5=cost-after 6=total_input_tokens
+  rm -f /tmp/claude-statusline-*-"$1".txt /tmp/claude-turn-"$1".state 2>/dev/null
+  _p='{"session_id":"%s","model":{"id":"%s","display_name":"%s"},"effort":{"level":"xhigh"},"transcript_path":"%s","context_window":{"used_percentage":23,"context_window_size":1000000,"total_input_tokens":%s},"cost":{"total_cost_usd":%s}}'
+  printf "$_p" "$1" "$2" "$3" "$proj/$1.jsonl" "$6" "$4" | sh "$SCRIPT" >/dev/null
+  printf "$_p" "$1" "$2" "$3" "$proj/$1.jsonl" "$6" "$5" | sh "$SCRIPT"
+}
+
+session="statusline-test-miss-opus55"
+{
+  prompt_line u0 09:00
+  usage_line r0 2 25144 202327 202327 0 400 end_turn 09:01
+  prompt_line u1 10:00
+  usage_line r1 2 25144 202810 202810 0 216 end_turn 10:01
+} > "$proj/$session.jsonl"
+out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 12.000 13.632 227956)
+assert_contains     "miss, Opus 5.5: turn price is Claude Code's own delta" "$out" '$1.6('
+assert_contains     "miss, Opus 5.5: the rebuild is priced at \$4 x (2 - 0.05)" "$out" '(1.6⏱)'
+assert_not_contains "miss, Opus 5.5: not the old flat \$5 x 1.9 over the whole prompt" "$out" '(2.2⏱)'
+# The idle forecast: 227,956 live minus the 25,144 a cold start still reads.
+assert_contains     "miss, Opus 5.5: forecast excludes the prefix that survives" "$out" 'miss+=$1.6)'
+
+# A session resumed inside the TTL opens with a WARM read of the whole prefix.
+# That is not what survives an expiry, so it must not be subtracted: with no
+# cold request seen, the forecast prices the whole 201K prompt ($1.57).
+session="statusline-test-warm-resume"
+{
+  prompt_line u0 09:00
+  usage_line r0 2 200000 1000 1000 0 300 end_turn 09:01
+} > "$proj/$session.jsonl"
+out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 2.000 2.100 201002)
+assert_contains     "warm resume: a warm first read is not the survivor" "$out" 'miss+=$1.6)'
+
+# The same usage on Opus 5 must price at Opus 5's $5 and 0.1x reads: the
+# "opus-5" pattern is a prefix of "opus-5-5", so the order of the cases matters.
+session="statusline-test-miss-opus5"
+cp "$proj/statusline-test-miss-opus55.jsonl" "$proj/$session.jsonl"
+out=$(render_twice "$session" "claude-opus-5[1m]" "Opus 5 (1M context)" 12.000 14.000 227956)
+assert_contains     "miss, Opus 5: 202,329 x \$5 x (2 - 0.1) = \$1.92" "$out" '(1.9⏱)'
+
+# A 5m-bucket rebuild on Sonnet 5.5 ($2, 1.25x write, 0.1x read), capped at what
+# was cached before: 100,000 x 2 x 1.15 = $0.23, not the 100,500 it wrote.
+session="statusline-test-miss-sonnet-5m"
+{
+  prompt_line u0 09:00
+  usage_line r0 0 99000 1000 0 1000 300 end_turn 09:01
+  prompt_line u1 10:00
+  usage_line r1 0 0 100500 0 100500 300 end_turn 10:01
+} > "$proj/$session.jsonl"
+out=$(render_twice "$session" "claude-sonnet-5-5" "Sonnet 5.5" 1.000 1.300 100500)
+assert_contains     "miss, 5m bucket: priced at the 5m write, capped at the old prefix" "$out" '(0.2⏱)'
+
+# A /compact is not a miss: the prompt SHRANK from 976K to 77K and read back
+# only the system prefix, which the old rule priced as "$1.1(9.3⏱)".
+session="statusline-test-compact"
+{
+  prompt_line u0 09:00
+  usage_line r0 2 970000 6331 6331 0 400 end_turn 09:01
+  prompt_line u1 10:00
+  usage_line r1 2 30026 47314 47314 0 900 end_turn 10:01
+} > "$proj/$session.jsonl"
+out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 40.000 41.129 77342)
+assert_not_contains "compaction: a shrunken prompt is not a cache miss" "$out" '⏱'
+
+# A healthy turn reads the prefix back and carries no tag at all.
+session="statusline-test-cache-hit"
+{
+  prompt_line u0 09:00
+  usage_line r0 2 150000 5000 5000 0 400 end_turn 09:01
+  prompt_line u1 09:03
+  usage_line r1 2 155000 900 900 0 300 end_turn 09:04
+} > "$proj/$session.jsonl"
+out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 5.000 5.200 155902)
+assert_not_contains "cache hit: no miss tag" "$out" '⏱'
+
+# --- Case: the placeholder before the turn's first cost ----------------------
+# Working (the prompt is the last line, nothing answered yet) and the session
+# total has not moved: exactly seven stars hold the slot -- never one flower,
+# never the flower repeated to pad it.
+session="statusline-test-placeholder"
+{
+  prompt_line u0 09:00
+  usage_line r0 2 50000 1000 1000 0 300 end_turn 09:01
+  prompt_line u1 09:05
+} > "$proj/$session.jsonl"
+out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 3.000 3.000 51002)
+assert_contains     "placeholder: seven stars before the turn has a cost" "$out" '★★★★★★★ ⊂ $3.0'
+assert_not_contains "placeholder: exactly seven" "$out" '★★★★★★★★'
+for _g in '·' '✢' '✳' '✻' '✽'; do
+  assert_not_contains "placeholder: no lone flower ($_g)" "$out" " $_g ⊂"
+done
+# Once the first cost lands, the figure replaces the stars.
+out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 3.000 3.500 51002)
+assert_not_contains "placeholder: gone once a figure exists" "$out" '★'
+assert_contains     "placeholder: the live figure takes its place" "$out" '0.5 ⊂ $3.5'
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

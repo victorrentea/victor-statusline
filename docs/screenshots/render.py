@@ -227,7 +227,8 @@ SPECS = [
     dict(
         out="claude-prompt-cache.png",
         title="Claude Code — the prompt cache, and the money it quietly costs",
-        subtitle="Cached input is billed at <b>0.1×</b>; rebuilding a prefix costs "
+        subtitle="Cached input is billed at <b>0.1×</b> (0.05× on Opus 5.5, 0.025× on "
+                 "Fable 5.1 — the bar prices each model at its own); rebuilding a prefix costs "
                  "<b>1.25×</b> on a 5-minute cache and <b>2.0×</b> on a 1-hour one. "
                  "Re-sending a 300K-token Opus prefix is therefore about three dollars "
                  "of pure waste — and it is <i>completely invisible</i> in the price, "
@@ -306,8 +307,11 @@ SPECS = [
                       "clock running out, and it is the same clock the row above was "
                       "counting. The verdict is deterministic, off the API's own "
                       "numbers — a miss is a prefix of ≥5000 tokens whose first request "
-                      "this turn read back less than half; on real transcripts genuine "
-                      "misses read back 0–7% and healthy turns 80–100%."),
+                      "this turn read back less than half (and whose prompt did not "
+                      "shrink, which is a compaction); on real transcripts genuine "
+                      "misses read back 0–7% and healthy turns 80–100%. Priced off that "
+                      "request: what it rewrote of the old prefix, at the 5m/1h bucket "
+                      "it was billed in."),
                  ]),
         ],
     ),
