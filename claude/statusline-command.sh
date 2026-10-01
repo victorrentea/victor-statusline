@@ -240,6 +240,31 @@ TEAL="${ESC}[38;5;80m"
 # unverified, without borrowing the meaning of orange/red (which mean "low").
 GREY="${ESC}[38;5;244m"
 
+# --- Light page -------------------------------------------------------------
+# The Claude theme is `custom:follow-macos`, whose `base` Victor Addons flips
+# with the macOS appearance, and session-color.sh repaints the Claude tabs with
+# it: #2e3440 polar night in dark mode, #eceff4 snow storm in light mode. Every
+# colour above was tuned on the dark tint — 111/78/80 are pale enough to vanish
+# on the light one, and the quota and folder chips turn into heavy dark blocks.
+# So on a light page the text colours drop to their deep counterparts and every
+# chip becomes a pastel ground under black text. Read from the theme file, not
+# from `defaults`: a builtin read instead of a fork per render, and it is the
+# exact switch Claude itself is following. CLAUDE_STATUSLINE_LIGHT=0/1 overrides.
+LIGHT_UI="${CLAUDE_STATUSLINE_LIGHT:-}"
+if [ -z "$LIGHT_UI" ]; then
+  LIGHT_UI=0
+  _theme_json=''
+  [ -r "$HOME/.claude/themes/follow-macos.json" ] \
+    && read -r _theme_json < "$HOME/.claude/themes/follow-macos.json" 2>/dev/null
+  case "$_theme_json" in *'"base": "light"'*) LIGHT_UI=1 ;; esac
+fi
+if [ "$LIGHT_UI" = 1 ]; then
+  ORANGE="${ESC}[38;5;166m"
+  BLUE="${ESC}[38;5;25m"
+  GREEN="${ESC}[38;5;28m"
+  TEAL="${ESC}[38;5;30m"
+fi
+
 # --- Bloom ramp: the five brightness steps the running turn's cost breathes
 # through, in step with the flower's own bloom (see the $((now % 9)) case below).
 # The clay/salmon family, because that is what Claude Code paints "Working…" in
@@ -464,6 +489,18 @@ if [ -n "$five" ]; then
   QORANGE="${_qb}${ESC}[38;5;208m"
   QRED="${_qb}${ESC}[38;5;203m"
   QGREY="${_qb}${ESC}[38;5;248m"
+  # Light page: the same three states as pastels — lavender 189 (calm), peach
+  # 223 (<15%), pink 217 (<5%) — under black text, with the arrow hues deepened
+  # to stay legible on a pale ground.
+  if [ "$LIGHT_UI" = 1 ]; then
+    case "$_qbg" in 88) _qbg=217 ;; 94) _qbg=223 ;; *) _qbg=189 ;; esac
+    _qb="${ESC}[48;5;${_qbg}m"
+    QCHIP="${_qb}${ESC}[38;5;16m"
+    QGREEN="${_qb}${ESC}[38;5;28m"
+    QORANGE="${_qb}${ESC}[38;5;166m"
+    QRED="${_qb}${ESC}[38;5;160m"
+    QGREY="${_qb}${ESC}[38;5;242m"
+  fi
   ind=""
   dur=""
   until_time=""
@@ -1646,6 +1683,13 @@ esac
 #
 # Each entry is background:foreground.
 FOLDER_CHIPS='25:231 61:231 91:231 126:231 28:231 30:231 100:231 130:231 19:231 88:231 223:16 194:16 189:16 224:16 230:16 195:16 217:16 186:16 183:16 252:16'
+# Light page: every slot becomes a pastel under black text, position by position,
+# so a folder keeps its hue family across the flip (25 blue -> 153 pale blue, 28
+# green -> 157 pale green, ...). The near-whites of the dark palette (230, 195,
+# 252) each step one shade deeper, or they would melt into #eceff4.
+if [ "$LIGHT_UI" = 1 ]; then
+  FOLDER_CHIPS='153:16 147:16 219:16 218:16 157:16 158:16 229:16 222:16 117:16 181:16 223:16 194:16 189:16 224:16 187:16 159:16 217:16 186:16 183:16 250:16'
+fi
 
 # The hash costs a fork and this bar re-renders every second in every open
 # session — the exact shape of load that once made the whole machine feel slow.
