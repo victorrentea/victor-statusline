@@ -267,7 +267,7 @@ SPECS = [
                       "remember the TTL to draw one. The TTL is <b>read, not assumed</b>: "
                       "the API says which ephemeral bucket each cache write landed in, "
                       "so the session states its own."),
-                     (r"miss\+=\$[\d.]+", "spend",
+                     (r"⇒\+=\$[\d.]+", "spend",
                       "<b>the loss, priced before it happens</b> — the whole live "
                       "context re-written at the cache-<b>write</b> price instead of "
                       "read at the cache-<b>read</b> price. That spread is 1.15× base "

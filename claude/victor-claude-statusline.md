@@ -55,14 +55,14 @@ Idle long enough that the prompt cache is gone. The loss is priced either way;
 what changes with the amount is whether it moves. Below $2 it just sits there:
 
 ```
-Opus 5h 170K | ↑87% / 1h41 | $7.8 (>1h⇒miss+=$1.6) ⊂ $10 | ai | +15=82% / 3wd8h
+Opus 5h 170K | ↑87% / 1h41 | $7.8 (>1h⇒+=$1.6) ⊂ $10 | ai | +15=82% / 3wd8h
 ```
 
 Above $2, `220K`, `>1h` and `$2.1` **blink red** in unison, one second on, one
 second off (§1.1); everything else holds still:
 
 ```
-Opus 5h 220K | ↑87% / 1h42 | $1.5 (>1h⇒miss+=$2.1) ⊂ $23 | ai | +15=82% / 3wd8h
+Opus 5h 220K | ↑87% / 1h42 | $1.5 (>1h⇒+=$2.1) ⊂ $23 | ai | +15=82% / 3wd8h
 ```
 
 Five-hour quota nearly exhausted and confirmed by the account: `quota-gate.sh`
@@ -207,7 +207,7 @@ priority order:
 | it is **about to expire** (idle ≥ 0.8 × TTL) | orange / normal |
 | context is simply **enormous** (> 300K tokens) | red, **static** — on Opus/Fable **orange** > 300K, red only **≥ 650K** |
 
-The first two **also blink the `-N` clock and its `miss+=$…` price**, in the
+The first two **also blink the `-N` clock and its `+=$…` price**, in the
 same colour on the same beat, and that pairing is the entire point: the clock
 says how much time the cache has left, the token count says how much that cache
 is *worth*, and the price says it in money. Each alone answers a fraction of "is
@@ -235,15 +235,15 @@ Two deliberate choices:
   terminal's own contrast instead of white-on-dark-red, and on the off-beat the
   text is simply *normal* — fully legible half the time by construction, so the
   figure never has to be read through the alarm.
-- **Only the variables blink.** In `(-51m > 5m⇒miss+=$1.7)`, the parts that
-  move are `-51m` and `$1.7`. The scaffolding around them (`> 5m`, `⇒miss+=`)
+- **Only the variables blink.** In `(-51m > 5m⇒+=$1.7)`, the parts that
+  move are `-51m` and `$1.7`. The scaffolding around them (`> 5m`, `⇒+=`)
   says how to read those two figures and holds still; blinking it too
   just widened the flashing block into a bar of moving text you had to wait out.
 
 ### Reporting and alarming are two different thresholds
 
 The **price is always reported**. Every expired or expiring cache prints its
-`(…⇒miss+=$…)`, at any size, because that figure answers a question you may be
+`(…⇒+=$…)`, at any size, because that figure answers a question you may be
 asking on purpose — *what did stepping away just cost me?* — and a number
 withheld below an arbitrary line makes the bar useless for checking.
 
@@ -252,15 +252,15 @@ would cost more than **$2** (`CLAUDE_MISS_FLOOR` to change it). So a cheap miss
 sits there in plain text and a dear one starts moving:
 
 ```
-… | $7.8 (>1h⇒miss+=$1.4) ⊂ $10 | …    ← states the loss, stays still
-… | $7.8 (>1h⇒miss+=$2.1) ⊂ $10 | …    ← ">1h" and "$2.1" blink red
+… | $7.8 (>1h⇒+=$1.4) ⊂ $10 | …    ← states the loss, stays still
+… | $7.8 (>1h⇒+=$2.1) ⊂ $10 | …    ← ">1h" and "$2.1" blink red
 ```
 
 The alarm threshold used to be a flat 100K tokens, which is the wrong unit: what
 makes a miss worth interrupting you over is the **money**, and the same 100K on a
 1h TTL is ~19c of Haiku and ~78c of Opus 5.5. It is the *same* figure the bar is
 already printing, so the rule explains itself on screen — you see a blinking
-`⇒miss+=$2.1` beside a still `⇒miss+=$1.4` and the reason is the number itself,
+`⇒+=$2.1` beside a still `⇒+=$1.4` and the reason is the number itself,
 not a token count you would have to convert in your head.
 
 `cache_phase()` therefore knows nothing about money — it answers a pure question
@@ -839,7 +839,7 @@ quantity, a piece of the same money.
   timeline already uses. In a bar where every other cell is a number, a lone
   English word was the only thing asking to be *read* rather than seen — and it
   spent three cells in the one segment that also has to fit a price
-  (`$7.8 (-51m > 5m⇒miss+=$2.1) ⊂ $10` is tight enough already). `>1h` keeps its
+  (`$7.8 (-51m > 5m⇒+=$2.1) ⊂ $10` is tight enough already). `>1h` keeps its
   own shape: the `>` points the same direction the minus would, and `->1h` would
   stack two symbols onto one meaning.
 
@@ -1019,9 +1019,9 @@ blink only above **$2** — see §1.1):
 | Age since the last turn | Rendering | Meaning |
 |-------------------------|-----------|---------|
 | `< 0.8 × TTL` | plain, `-12m` | prefix is warm — no price, nothing at stake |
-| `0.8 × TTL … TTL` | orange, `(-48m <= 1h⇒miss+=$2.1)` | last chance — send now and you still pay 0.1× |
-| `≥ TTL` | red, `(-51m > 5m⇒miss+=$2.1)` | prefix is gone; your next message rebuilds it at the write price |
-| `≥ 1 h` | red, `(>1h⇒miss+=$2.1)` | as above, and the exact age no longer matters |
+| `0.8 × TTL … TTL` | orange, `(-48m <= 1h⇒+=$2.1)` | last chance — send now and you still pay 0.1× |
+| `≥ TTL` | red, `(-51m > 5m⇒+=$2.1)` | prefix is gone; your next message rebuilds it at the write price |
+| `≥ 1 h` | red, `(>1h⇒+=$2.1)` | as above, and the exact age no longer matters |
 
 The colour **blinks** on/off in the bottom three rows only when the price clears
 $2; below that the same text is rendered once, in the terminal's normal colour.
@@ -1052,7 +1052,7 @@ decided about and the gap between `41m` and `58m` is the gap between "later" and
 "now".
 
 **And it prices the loss — in the orange phase too, not just past the TTL.**
-`miss+=$2.1` is the context re-written at the cache-**write** price instead of
+`+=$2.1` is the context re-written at the cache-**write** price instead of
 read at the cache-**read** price — the spread between the two multipliers, at the
 model's own input rate (Opus 5.5 $4/MTok, Opus 5 and 4.x $5, Sonnet 5.x $2,
 Sonnet 4.x $3, Haiku $1, Fable $10) and its own read multiplier. The tokens are
@@ -1738,7 +1738,7 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
   before it, red once past it. That predicate is deliberately **money-blind** — it
   answers a question about time only — and a second predicate, `miss_big()`,
   decides whether the state is worth *blinking* about (uncached re-send > **$2**,
-  the same figure the bar prints as `⇒miss+=$2.1`). Splitting them is what lets
+  the same figure the bar prints as `⇒+=$2.1`). Splitting them is what lets
   the clock report a cheap miss in plain text instead of having to choose between
   shouting and staying silent; gating the alarm on money rather than tokens means
   the threshold means the same thing on Haiku as on Opus, and the reason for the
@@ -2042,6 +2042,31 @@ TEAL="${ESC}[38;5;80m"
 # unverified, without borrowing the meaning of orange/red (which mean "low").
 GREY="${ESC}[38;5;244m"
 
+# --- Light page -------------------------------------------------------------
+# The Claude theme is `custom:follow-macos`, whose `base` Victor Addons flips
+# with the macOS appearance, and session-color.sh repaints the Claude tabs with
+# it: #2e3440 polar night in dark mode, #eceff4 snow storm in light mode. Every
+# colour above was tuned on the dark tint — 111/78/80 are pale enough to vanish
+# on the light one, and the quota and folder chips turn into heavy dark blocks.
+# So on a light page the text colours drop to their deep counterparts and every
+# chip becomes a pastel ground under black text. Read from the theme file, not
+# from `defaults`: a builtin read instead of a fork per render, and it is the
+# exact switch Claude itself is following. CLAUDE_STATUSLINE_LIGHT=0/1 overrides.
+LIGHT_UI="${CLAUDE_STATUSLINE_LIGHT:-}"
+if [ -z "$LIGHT_UI" ]; then
+  LIGHT_UI=0
+  _theme_json=''
+  [ -r "$HOME/.claude/themes/follow-macos.json" ] \
+    && read -r _theme_json < "$HOME/.claude/themes/follow-macos.json" 2>/dev/null
+  case "$_theme_json" in *'"base": "light"'*) LIGHT_UI=1 ;; esac
+fi
+if [ "$LIGHT_UI" = 1 ]; then
+  ORANGE="${ESC}[38;5;166m"
+  BLUE="${ESC}[38;5;25m"
+  GREEN="${ESC}[38;5;28m"
+  TEAL="${ESC}[38;5;30m"
+fi
+
 # --- Bloom ramp: the five brightness steps the running turn's cost breathes
 # through, in step with the flower's own bloom (see the $((now % 9)) case below).
 # The clay/salmon family, because that is what Claude Code paints "Working…" in
@@ -2266,6 +2291,18 @@ if [ -n "$five" ]; then
   QORANGE="${_qb}${ESC}[38;5;208m"
   QRED="${_qb}${ESC}[38;5;203m"
   QGREY="${_qb}${ESC}[38;5;248m"
+  # Light page: the same three states as pastels — lavender 189 (calm), peach
+  # 223 (<15%), pink 217 (<5%) — under black text, with the arrow hues deepened
+  # to stay legible on a pale ground.
+  if [ "$LIGHT_UI" = 1 ]; then
+    case "$_qbg" in 88) _qbg=217 ;; 94) _qbg=223 ;; *) _qbg=189 ;; esac
+    _qb="${ESC}[48;5;${_qbg}m"
+    QCHIP="${_qb}${ESC}[38;5;16m"
+    QGREEN="${_qb}${ESC}[38;5;28m"
+    QORANGE="${_qb}${ESC}[38;5;166m"
+    QRED="${_qb}${ESC}[38;5;160m"
+    QGREY="${_qb}${ESC}[38;5;242m"
+  fi
   ind=""
   dur=""
   until_time=""
@@ -2470,7 +2507,7 @@ fmt_age() {
   # Say WHY it is blinking, in the terms the reader would otherwise have to
   # supply from memory: the idle time, the TTL it is measured against, and what
   # crossing it costs. "-51m" alone is a number with no verdict attached —
-  # "(-51m > 5m⇒miss+=$1.7)" is the verdict, and it is also the one form that
+  # "(-51m > 5m⇒+=$1.7)" is the verdict, and it is also the one form that
   # survives the TTL being 1h instead of 5m without silently changing meaning.
   #
   # The whole clause sits INSIDE one pair of brackets because it is one
@@ -2482,9 +2519,12 @@ fmt_age() {
   # next message ADDS on top of the turn price to its left, not a second total
   # competing with it. Bracketing the pair also stops the price from floating
   # loose next to the "⊂ $10" that follows and reading as part of the budget.
+  # The word "miss" used to sit between "⇒" and "+=" and was dropped (2 Oct 2026):
+  # an age past the TTL, an arrow and an added price already say it, and the
+  # word only made the clause wider.
   #
   # Only the two VARIABLES blink — the elapsed time and the price. The words
-  # around them ("> 5m", "⇒miss+=") are fixed scaffolding that says how to
+  # around them ("> 5m", "⇒+=") are fixed scaffolding that says how to
   # read those two figures, and blinking them too just widened the flashing block
   # until it was a bar of moving text you had to wait out to read. Held steady,
   # they stay legible during the off-beat and the eye lands straight on whichever
@@ -2495,7 +2535,7 @@ fmt_age() {
   # may be asking on purpose ("what did stepping away just cost me?") and a number
   # withheld below an arbitrary line is a bar you cannot use to check. The BLINK is
   # reserved for the ones worth interrupting you over ($MISS_FLOOR). So a cheap
-  # miss prints "(-51m > 5m⇒miss+=$1.4)" in plain text and stays out of the way,
+  # miss prints "(-51m > 5m⇒+=$1.4)" in plain text and stays out of the way,
   # and only a dear one starts moving.
   _phase=$(cache_phase "$_secs")
   case "$_phase" in
@@ -2514,10 +2554,10 @@ fmt_age() {
   if [ "$_price" = '$0.0' ]; then
     printf ' %s%s' "$_rel" "$_cmp"
   elif miss_big; then
-    printf ' (%s%s⇒miss+=%s)' \
+    printf ' (%s%s⇒+=%s)' \
       "$(pulse "$_hue" "$_rel")" "$_cmp" "$(pulse "$_hue" "$_price")"
   else
-    printf ' (%s%s⇒miss+=%s)' "$_rel" "$_cmp" "$_price"
+    printf ' (%s%s⇒+=%s)' "$_rel" "$_cmp" "$_price"
   fi
 }
 
@@ -2593,7 +2633,7 @@ trunc1() { awk -v v="${1:-0}" 'BEGIN{ printf "%.1f", int(v*10 + 1e-9)/10 }'; }
 # which is the wrong unit: what makes a miss worth interrupting you over is the
 # MONEY, and the same 100K on a 1h TTL is ~19c of Haiku and ~78c of Opus 5.5.
 # Testing the dollar figure the bar is about to print also makes the rule
-# self-evident on screen — you see "⇒miss+=$2.1" blinking next to a "⇒miss+=$1.4"
+# self-evident on screen — you see "⇒+=$2.1" blinking next to a "⇒+=$1.4"
 # that does not, and the reason is the number itself, not a token count you would
 # have to convert. Raise the floor if the bar still interrupts too eagerly:
 #   export CLAUDE_MISS_FLOOR=5
@@ -3448,6 +3488,13 @@ esac
 #
 # Each entry is background:foreground.
 FOLDER_CHIPS='25:231 61:231 91:231 126:231 28:231 30:231 100:231 130:231 19:231 88:231 223:16 194:16 189:16 224:16 230:16 195:16 217:16 186:16 183:16 252:16'
+# Light page: every slot becomes a pastel under black text, position by position,
+# so a folder keeps its hue family across the flip (25 blue -> 153 pale blue, 28
+# green -> 157 pale green, ...). The near-whites of the dark palette (230, 195,
+# 252) each step one shade deeper, or they would melt into #eceff4.
+if [ "$LIGHT_UI" = 1 ]; then
+  FOLDER_CHIPS='153:16 147:16 219:16 218:16 157:16 158:16 229:16 222:16 117:16 181:16 223:16 194:16 189:16 224:16 187:16 159:16 217:16 186:16 183:16 250:16'
+fi
 
 # The hash costs a fork and this bar re-renders every second in every open
 # session — the exact shape of load that once made the whole machine feel slow.

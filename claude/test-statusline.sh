@@ -481,7 +481,7 @@ assert_contains     "miss, Opus 5.5: turn price is Claude Code's own delta" "$ou
 assert_contains     "miss, Opus 5.5: the rebuild is priced at \$4 x (2 - 0.05)" "$out" '(1.6⏱)'
 assert_not_contains "miss, Opus 5.5: not the old flat \$5 x 1.9 over the whole prompt" "$out" '(2.2⏱)'
 # The idle forecast: 227,956 live minus the 25,144 a cold start still reads.
-assert_contains     "miss, Opus 5.5: forecast excludes the prefix that survives" "$out" 'miss+=$1.6)'
+assert_contains     "miss, Opus 5.5: forecast excludes the prefix that survives" "$out" '⇒+=$1.6)'
 
 # A session resumed inside the TTL opens with a WARM read of the whole prefix.
 # That is not what survives an expiry, so it must not be subtracted: with no
@@ -492,7 +492,7 @@ session="statusline-test-warm-resume"
   usage_line r0 2 200000 1000 1000 0 300 end_turn 09:01
 } > "$proj/$session.jsonl"
 out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 2.000 2.100 201002)
-assert_contains     "warm resume: a warm first read is not the survivor" "$out" 'miss+=$1.6)'
+assert_contains     "warm resume: a warm first read is not the survivor" "$out" '⇒+=$1.6)'
 
 # The same usage on Opus 5 must price at Opus 5's $5 and 0.1x reads: the
 # "opus-5" pattern is a prefix of "opus-5-5", so the order of the cases matters.
