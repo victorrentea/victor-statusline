@@ -98,10 +98,6 @@ CLAUDE_MODEL = [
      "model display name plus the reasoning effort, abbreviated to one or two "
      "lower-case letters and glued straight on: <b>l</b>ow, <b>m</b>edium, "
      "<b>h</b>igh, <b>xh</b>igh, <b>max</b>."),
-    (r"[☀☁☂☇↯](?= )", "model",
-     "the context forecast, read off the used% alone: <b>☀</b> under 25%, "
-     "<b>☁</b> to 49, <b>☂</b> to 74, <b>☇</b> to 89, <b>↯</b> compact soon. "
-     "The one place a 1M window still shows its ratio — as a shape, not a number."),
     (r"\d+K(?= )", "model",
      "context tokens in play. Blue while healthy, blinking when it is not. On a 1M "
      "Opus or Fable window the denominator is dropped — <i>330K out of a window you already "

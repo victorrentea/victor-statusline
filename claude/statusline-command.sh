@@ -239,10 +239,6 @@ TEAL="${ESC}[38;5;80m"
 # Grey is the "do not act on this" colour: it says the figure is present but
 # unverified, without borrowing the meaning of orange/red (which mean "low").
 GREY="${ESC}[38;5;244m"
-# The context forecast's own three hues (storm and compact reuse ORANGE/RED).
-WX_CLEAR="${ESC}[38;5;220m"     # sun, yellow
-WX_CLOUDY="${ESC}[38;5;26m"     # cloud, dark blue
-WX_SHOWERS="${ESC}[38;5;98m"    # umbrella, violet
 
 # --- Light page -------------------------------------------------------------
 # The Claude theme is `custom:follow-macos`, whose `base` Victor Addons flips
@@ -267,9 +263,6 @@ if [ "$LIGHT_UI" = 1 ]; then
   BLUE="${ESC}[38;5;25m"
   GREEN="${ESC}[38;5;28m"
   TEAL="${ESC}[38;5;30m"
-  WX_CLEAR="${ESC}[38;5;178m"   # 220 is invisible on white
-  WX_CLOUDY="${ESC}[38;5;19m"
-  WX_SHOWERS="${ESC}[38;5;55m"
 fi
 
 # --- Bloom ramp: the five brightness steps the running turn's cost breathes
@@ -362,24 +355,12 @@ if [ -n "$ctx" ]; then
     # transcript has been parsed a hundred lines below. Substituting at the end
     # keeps this block about layout and the pulse decision in one place with the
     # other cache logic, instead of splitting the rule across the file.
-    # The context forecast: one glyph in front of the count, read off the
-    # used% alone, so the room left is legible before the number is. It is the
-    # one place a 1M Opus/Fable window still shows its ratio, without spending
-    # a "• N%" on it. Text glyphs, not emoji: emoji ignore the colour, and the
-    # colour is half the signal.
-    if   [ "$ctx_pct" -ge 90 ]; then wx="${RED}↯"                      # compact soon
-    elif [ "$ctx_pct" -ge 75 ]; then wx="${ORANGE}☇"                   # storm
-    elif [ "$ctx_pct" -ge 50 ]; then wx="${WX_SHOWERS}☂"               # showers
-    elif [ "$ctx_pct" -ge 25 ]; then wx="${WX_CLOUDY}☁"                # cloudy
-    else                             wx="${WX_CLEAR}☀"                 # clear
-    fi
-    wx="${wx}${RESET} "
     if [ "$size_label" = "1M" ] && [ -n "$is_1m_family" ]; then
-      model="$model ${wx}@@CTX@@"
+      model="$model @@CTX@@"
     elif [ "$size_label" = "1M" ]; then
-      model="$model ${wx}@@CTX@@/${size_label}"
+      model="$model @@CTX@@/${size_label}"
     else
-      model="$model ${wx}@@CTX@@/${size_label} • ${pct_str}"
+      model="$model @@CTX@@/${size_label} • ${pct_str}"
     fi
   fi
 fi

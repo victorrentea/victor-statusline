@@ -153,13 +153,12 @@ memoised in `~/.claude/cwd/.tty-$PPID` beside the cwd markers.
 rather than quit cannot leave a microphone on a row with nothing behind it. The
 badge is only worth anything if it can be trusted.
 
-## 1. Model & context — `Opus 5xh ☀ 50K`
+## 1. Model & context — `Opus 5xh 50K`
 
 | Piece | Meaning | Source (stdin JSON) |
 |-------|---------|---------------------|
 | `Opus 5` | model display name (with ` context)` trimmed to `)`) | `.model.display_name` |
 | `xh` | reasoning effort, abbreviated lower-case (`l`/`m`/`h`/`xh`/`max`), glued straight onto the name before any `(size)` | `.effort.level` |
-| `☀` | context forecast — one glyph for how full the window is (§1.0) | `.context_window.used_percentage` |
 | `50K` | absolute context tokens used (blue) = `used% × size` | `.context_window.used_percentage` × size |
 | `/200K` | context window size — **omitted on Opus and Fable**, whose window is always 1M | model's `(size)` suffix, else `.context_window.context_window_size` |
 
@@ -195,32 +194,6 @@ badge is only worth anything if it can be trusted.
   where the ratio is self-evident (`330K` out of a million, or the `used/size`
   pair spelling it out), and **kept on smaller windows**, where it is not. There
   it turns **orange ≥ 65%** and **red ≥ 95%**.
-
-### 1.0 The forecast — `☀ ☁ ☂ ☇ ↯`
-
-One glyph in front of the token count, picked from the used% of the window
-alone:
-
-| used | glyph | colour |
-|------|-------|--------|
-| under 25% | `☀` clear | yellow |
-| 25–49% | `☁` cloudy | dark blue |
-| 50–74% | `☂` showers | violet |
-| 75–89% | `☇` storm | orange |
-| 90% and up | `↯` compact soon | red |
-
-- **It reads before the number does.** `330K` needs arithmetic against a window
-  size; a cloud does not. On Opus and Fable, where both the `/1M` and the `• N%`
-  were dropped as redundant, this is the only place the ratio still shows — as a
-  shape, which costs two columns instead of five.
-- **Text glyphs, not emoji.** An emoji 🌤 carries its own colours and ignores the
-  escape code in front of it; the colour is half of the signal here, and the
-  only part peripheral vision picks up.
-- **It never blinks.** How full the window is changes slowly and is not an
-  event; the blink stays reserved for the cache-TTL alarm on the number beside
-  it (§1.1).
-- Light page: the sun drops from 220 to 178, which is otherwise invisible on
-  white; cloud and umbrella go to their deeper counterparts (19, 55).
 
 ### 1.1 The blink
 
@@ -2068,10 +2041,6 @@ TEAL="${ESC}[38;5;80m"
 # Grey is the "do not act on this" colour: it says the figure is present but
 # unverified, without borrowing the meaning of orange/red (which mean "low").
 GREY="${ESC}[38;5;244m"
-# The context forecast's own three hues (storm and compact reuse ORANGE/RED).
-WX_CLEAR="${ESC}[38;5;220m"     # sun, yellow
-WX_CLOUDY="${ESC}[38;5;26m"     # cloud, dark blue
-WX_SHOWERS="${ESC}[38;5;98m"    # umbrella, violet
 
 # --- Light page -------------------------------------------------------------
 # The Claude theme is `custom:follow-macos`, whose `base` Victor Addons flips
@@ -2096,9 +2065,6 @@ if [ "$LIGHT_UI" = 1 ]; then
   BLUE="${ESC}[38;5;25m"
   GREEN="${ESC}[38;5;28m"
   TEAL="${ESC}[38;5;30m"
-  WX_CLEAR="${ESC}[38;5;178m"   # 220 is invisible on white
-  WX_CLOUDY="${ESC}[38;5;19m"
-  WX_SHOWERS="${ESC}[38;5;55m"
 fi
 
 # --- Bloom ramp: the five brightness steps the running turn's cost breathes
@@ -2191,24 +2157,12 @@ if [ -n "$ctx" ]; then
     # transcript has been parsed a hundred lines below. Substituting at the end
     # keeps this block about layout and the pulse decision in one place with the
     # other cache logic, instead of splitting the rule across the file.
-    # The context forecast: one glyph in front of the count, read off the
-    # used% alone, so the room left is legible before the number is. It is the
-    # one place a 1M Opus/Fable window still shows its ratio, without spending
-    # a "• N%" on it. Text glyphs, not emoji: emoji ignore the colour, and the
-    # colour is half the signal.
-    if   [ "$ctx_pct" -ge 90 ]; then wx="${RED}↯"                      # compact soon
-    elif [ "$ctx_pct" -ge 75 ]; then wx="${ORANGE}☇"                   # storm
-    elif [ "$ctx_pct" -ge 50 ]; then wx="${WX_SHOWERS}☂"               # showers
-    elif [ "$ctx_pct" -ge 25 ]; then wx="${WX_CLOUDY}☁"                # cloudy
-    else                             wx="${WX_CLEAR}☀"                 # clear
-    fi
-    wx="${wx}${RESET} "
     if [ "$size_label" = "1M" ] && [ -n "$is_1m_family" ]; then
-      model="$model ${wx}@@CTX@@"
+      model="$model @@CTX@@"
     elif [ "$size_label" = "1M" ]; then
-      model="$model ${wx}@@CTX@@/${size_label}"
+      model="$model @@CTX@@/${size_label}"
     else
-      model="$model ${wx}@@CTX@@/${size_label} • ${pct_str}"
+      model="$model @@CTX@@/${size_label} • ${pct_str}"
     fi
   fi
 fi
