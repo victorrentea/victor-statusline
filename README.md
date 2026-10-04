@@ -125,13 +125,13 @@ figures to gate on and the hook exits immediately:
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040 } ] }
     ],
     "PreToolUse": [
-      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040 } ] }
     ],
     "PostToolUse": [
-      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+      { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040 } ] }
     ]
   }
 }

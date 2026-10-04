@@ -569,13 +569,13 @@ registered on the **three events that immediately precede an API request**:
 ```json
 "hooks": {
   "UserPromptSubmit": [
-    { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+    { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040 } ] }
   ],
   "PreToolUse": [
-    { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+    { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040 } ] }
   ],
   "PostToolUse": [
-    { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040, "statusMessage": "💤 quota exhausted — waiting for it to reset" } ] }
+    { "hooks": [ { "type": "command", "command": "~/.claude/hooks/quota-gate.sh", "timeout": 605040 } ] }
   ]
 }
 ```
@@ -611,9 +611,13 @@ matching ceiling on the other side: a wake computed beyond it is declined and
 logged rather than slept through, so the hook can never outlive its own
 timeout.
 
-`statusMessage` is what Claude Code shows while the hook blocks; without it the
-terminal looks hung during a park, which is the same failure the `💤` glyph
-solves inside the bar.
+**No `statusMessage`.** Claude Code shows a hook's `statusMessage` for every
+run of the hook, not only a long one, and it is static text. The gate runs
+before every request and lets ~all of them through in ~80 ms, so a
+"💤 quota exhausted" message flashed in front of every prompt and tool call with
+the quota nowhere near empty. The park is signalled by the `💤` glyph in the bar,
+which is drawn from the park marker and so appears only while a terminal is
+actually parked.
 
 **Switches.** `CLAUDE_QUOTA_GATE=0` disables the gate without unwiring it —
 useful when a long unattended run is *meant* to fail fast rather than sit for
