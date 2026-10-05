@@ -1185,8 +1185,8 @@ if [ -n "$spend_ready" ]; then
   fi
   # Displayed cost + label. Three states, driven by "am I working" AND by whether
   # the current turn has actually billed yet (turn_cost>0):
-  #   working, nothing billed yet (you just hit Enter) -> SEVEN STARS in place
-  #     of the figure ("★★★★★★★ ⊂ $12"). The previous turn's price vanishes the
+  #   working, nothing billed yet (you just hit Enter) -> FOUR STARS in place
+  #     of the figure ("★★★★ ⊂ $12"). The previous turn's price vanishes the
   #     instant you press Enter: for the 10-20s before the first response lands
   #     there is no current cost, and leaving the old number on screen means the
   #     one figure you look at is silently stale — you read "$1.4" and attribute
@@ -1248,7 +1248,7 @@ if [ -n "$spend_ready" ]; then
       *) flower="✽"; bloom=$BLOOM4 ;;
     esac
     # The flower stands in for the "$". No cost yet on this turn => print no
-    # figure at all; the seven stars below hold the slot instead.
+    # figure at all; the four stars below hold the slot instead.
     if [ "$(echo "$turn_cost > 0" | bc -l)" = "1" ]; then
       turn_disp=$(trunc1 "$turn_cost")
       turn_money=$(printf '%s%s%s%s' "$bloom" "$flower" "$RESET" "$turn_disp")
@@ -1257,9 +1257,11 @@ if [ -n "$spend_ready" ]; then
     fi
     turn_suffix=""
     # ★ (U+2605), not one of the bloom glyphs: ✢ ✳ ✻ ✽ are the flower, and the
-    # placeholder must not read as a flower. Exactly seven, one cell each. The
-    # hue still breathes with the bloom, so the bar says "working" as before.
-    lone="${bloom}★★★★★★★${RESET}"
+    # placeholder must not read as a flower. Exactly four, one cell each: the
+    # width of the figure it stands in for ("✻0.7" is four cells), so the slot
+    # is the same size empty or full. The hue still breathes with the bloom, so
+    # the bar says "working" as before.
+    lone="${bloom}★★★★${RESET}"
   else
     # idle after a finished turn -> that turn's cost is in turn_cost; just after
     # Enter (turn_cost==0) -> fall back to the previous turn's cost.
@@ -1311,15 +1313,18 @@ if [ -n "$spend_ready" ]; then
     spend_seg="${turn_money}${miss_tag}${turn_suffix} ${sep} ${total_money}"
   else
     # Nothing billed yet: the stars stand in for the missing figure, but the
-    # "⊂" stays ("★★★★★★★ ⊂ $12"). Dropping it was the earlier rule and it made the
+    # "⊂" stays ("★★★★ ⊂ $12"). Dropping it was the earlier rule and it made the
     # segment jump: the moment the first cost landed, "⊂" appeared out of nowhere
     # and shoved the total two cells right, so the one number you were watching
     # moved exactly when it started mattering. Keeping the separator through the
     # empty state keeps the segment's shape, and it is still true — whatever this
-    # turn ends up costing IS contained in that total, figure or no figure. (The
-    # seven stars are three cells wider than "✻0.7", so the total does step left
-    # once when the first cost lands: a one-time settle, the price of a
-    # placeholder that cannot be mistaken for the figure.)
+    # turn ends up costing IS contained in that total, figure or no figure. The
+    # stars are four for the same reason: "✻0.7" is four cells, so when the
+    # first cost lands the figure drops into exactly the room the stars held
+    # and the total does not move at all. (It used to be seven stars, three
+    # cells wider than the figure, and the total stepped left once on the
+    # first cost -- a settle that four removes. A turn of $10 or more prints
+    # one cell wider, but such a turn has long since replaced the stars.)
     spend_seg="${lone} ${sep} ${total_money}"
   fi
 fi

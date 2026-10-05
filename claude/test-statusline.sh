@@ -538,8 +538,9 @@ assert_not_contains "cache hit: no miss tag" "$out" '⏱'
 
 # --- Case: the placeholder before the turn's first cost ----------------------
 # Working (the prompt is the last line, nothing answered yet) and the session
-# total has not moved: exactly seven stars hold the slot -- never one flower,
-# never the flower repeated to pad it.
+# total has not moved: exactly four stars hold the slot -- as wide as the
+# "✻0.5" they stand in for, so the total does not move when the figure lands;
+# never one flower, never the flower repeated to pad it.
 session="statusline-test-placeholder"
 {
   prompt_line u0 09:00
@@ -547,8 +548,8 @@ session="statusline-test-placeholder"
   prompt_line u1 09:05
 } > "$proj/$session.jsonl"
 out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 3.000 3.000 51002)
-assert_contains     "placeholder: seven stars before the turn has a cost" "$out" '★★★★★★★ ⊂ $3.0'
-assert_not_contains "placeholder: exactly seven" "$out" '★★★★★★★★'
+assert_contains     "placeholder: four stars before the turn has a cost" "$out" '★★★★ ⊂ $3.0'
+assert_not_contains "placeholder: exactly four" "$out" '★★★★★'
 for _g in '·' '✢' '✳' '✻' '✽'; do
   assert_not_contains "placeholder: no lone flower ($_g)" "$out" " $_g ⊂"
 done
