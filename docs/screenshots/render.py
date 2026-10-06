@@ -165,13 +165,20 @@ SPECS = [
              "you are on <b>another model</b>: a budget this session cannot spend is "
              "three columns of someone else&#39;s business."),
             # The `wd` half is optional: the field drops units it does not need,
-            # so late on a Friday it is a bare "13h". Anchored to the end of the
-            # line because a bare \d+h would otherwise match inside "3h19".
-            (r"(?:\d+wd)?\d+h$", "week",
+            # so late on a Friday it is a bare "13h". Anchored to the week's
+            # spend that follows it because a bare \d+h would otherwise match
+            # inside "3h19".
+            (r"(?:\d+wd)?\d+h(?= \$)", "week",
              "<b>working</b> time until the weekly window resets: <code>wd</code> is "
              "weekdays, with Saturday and Sunday subtracted, because a weekend burns no "
              "quota and flattered the number every Monday. Units it does not need are "
              "dropped, so under a day left prints as a bare <code>13h</code>."),
+            (r"\$\d+/\d+d$", "week",
+             "what this week has burned <b>at API prices</b>, over the days that covers: "
+             "every assistant message since the window opened, priced at the list rate "
+             "of the model that answered it. It stops at <b>local midnight</b> — today "
+             "is left out, because the count reads every transcript of the week and so "
+             "runs once a day in the background; the bar only reads its cache."),
         ],
     ),
     dict(
@@ -181,7 +188,7 @@ SPECS = [
                  "<code>rate_limits</code> key entirely unless at least one window "
                  "exists, and its own schema says plan limits do not apply to an API "
                  "key — so both quota segments are not drawn.",
-        note="Nothing is greyed out or zeroed: fields 3–4 and 9–11 of the subscription "
+        note="Nothing is greyed out or zeroed: fields 3–4 and 9–13 of the subscription "
              "bar above are <b>absent</b>, and the <code>|</code> separators with them. "
              "The 2.1.263 binary is explicit about why — the payload is built as "
              "<code>…(five_hour || seven_day || spend_limit) &amp;&amp; {rate_limits}</code>, "

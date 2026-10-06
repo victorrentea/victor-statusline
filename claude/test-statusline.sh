@@ -558,6 +558,29 @@ out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 3.00
 assert_not_contains "placeholder: gone once a figure exists" "$out" '★'
 assert_contains     "placeholder: the live figure takes its place" "$out" '0.5 ⊂ $3.5'
 
+# --- Case: the week's spend at API prices, read from the once-a-day cache -----
+# The bar never counts: it reads ~/.claude/week-spend and prints "$N/Nd" only
+# when the cache is keyed to THIS window and TODAY. A stale key (yesterday's
+# line) must not print -- that would be yesterday's figure under today's label.
+wreset=$((now + 3 * 86400))
+payload=$(cat <<JSON
+{"session_id":"statusline-test-weekspend","model":{"display_name":"Claude Opus"},
+ "context_window":{},
+ "rate_limits":{"seven_day":{"used_percentage":40,"resets_at":$wreset}}}
+JSON
+)
+printf '%s %s 1839.62 4.0\n' "$((wreset - 604800))" "$(date +%F)" > "$HOME/.claude/week-spend"
+out=$(printf '%s' "$payload" | sh "$SCRIPT")
+assert_contains     "week spend: dollars over days, last cell" "$out" ' $1840/4d'
+assert_not_contains "week spend: no pipe before it" "$out" '| $1840'
+printf '%s 1999-01-01 1839.62 4.0\n' "$((wreset - 604800))" > "$HOME/.claude/week-spend"
+out=$(printf '%s' "$payload" | sh "$SCRIPT")
+assert_not_contains "week spend: a stale day prints nothing" "$out" '$1840'
+printf '%s %s 0.00 0.0\n' "$((wreset - 604800))" "$(date +%F)" > "$HOME/.claude/week-spend"
+out=$(printf '%s' "$payload" | sh "$SCRIPT")
+assert_not_contains "week spend: no complete day yet prints nothing" "$out" '/0d'
+rm -f "$HOME/.claude/week-spend"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

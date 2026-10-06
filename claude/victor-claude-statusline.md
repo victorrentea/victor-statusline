@@ -1371,6 +1371,59 @@ is now only about five minutes.
 
 ---
 
+## 4.1 Week's spend at API prices — `$1840/6d`
+
+The **very last** cell: what this week's usage would have cost **if every token
+had been paid for with an API key**, over the number of days that covers. The
+weekly cell before it says how much of the *allowance* is gone; it never says
+what that allowance is worth, and a subscription hides the money entirely. Dollars
+are the one unit that compares across plans, models and people — "I burn ~$300 a
+day" is a sentence anyone can weigh, "39% of a Max 20x week" is not.
+
+| Piece | Meaning | Source |
+|-------|---------|--------|
+| `$1840` | API-equivalent cost of every assistant message from the start of the 7-day window **to local midnight** | `~/.claude/week-spend`, written by `week-spend.py` |
+| `/6d` | the days those dollars cover — window start → midnight, rounded | same line |
+
+### Yesterday, not today — counted once a day
+
+The figure **stops at local midnight**. Today is deliberately not in it. Pricing
+the week means reading every transcript touched since the window opened —
+hundreds of MB under `~/.claude/projects/**/*.jsonl`, subagent transcripts
+included — and that is a fine job once a day in the background and an absurd
+one on every render of every terminal. A number that moves once a day also fits
+what it is for: a *rate* to set against the weekly pace, not a meter to watch
+tick.
+
+So the bar never counts anything. It reads one line,
+`"<window_start> <date> <usd> <days>"`, and prints it only when the key matches
+**this** window and **today**. Any mismatch — a new day, or the window turning
+over — makes that render kick `week-spend.py` in the background (one at a time,
+under a `mkdir` lock) and print nothing in the meantime: yesterday's figure
+under today's label would be a wrong number that looks right. While the window
+holds no complete day yet (it opened today, or an hour before midnight) the
+cell is absent too — `$12/0d` says nothing.
+
+### How a message is priced
+
+Each assistant line carries the API's own `usage`; a response split into several
+content blocks repeats the same `message.id` and the same usage on each line, so
+messages are **deduplicated by id** before anything is added up. Each one is
+priced at the list rates of the model that answered it, matched on the model ID
+in the same order as the bar's own price table (x.5 before x — `opus-5` is a
+prefix of `opus-5-5`): base input, output at 5×, cache writes at 1.25× (5m) or
+2× (1h) from `cache_creation`'s TTL split, cache reads at the model's read
+multiplier (0.05× Opus 5.5, 0.025× Fable 5.1, 0.1× the rest), plus $10 per
+thousand web searches. `<synthetic>` messages cost nothing and are skipped.
+
+### No `|` in front
+
+The cell follows the weekly reading with a bare space: `/ 3wd11h $1840/6d`. The
+`$` already says where a new figure starts, and a pipe would have spent two
+columns separating two things nobody could read as one.
+
+---
+
 ## 5. Location — `ai@fix-cache`
 
 Second-to-last segment: the **repo**, plus `@branch` when the branch is not the
@@ -1815,7 +1868,7 @@ To reproduce this exact status line: save the script below to `~/.claude/statusl
 ```sh
 #!/bin/sh
 # Claude Code status line:
-#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend folder[@branch] 7d quota"
+#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend folder[@branch] 7d quota $week/Nd"
 #
 # Ordered by how fast each figure moves: the model line is fixed, the 5h window
 # and the spend change within a turn, the folder changes when you cd, and the
@@ -3585,6 +3638,38 @@ fi
 # there to divide them, the usual pipe when there is no folder segment at all.
 [ -n "$week_seg" ] && out="$out${_loc_sep:- | }$week_seg"
 
+# --- Week's spend at API prices, the very last cell: "$1840/6d" ---------------
+# The weekly cell says how much of the ALLOWANCE is gone, never what it is worth.
+# This is the week's usage priced as if every token had gone through an API key:
+# dollars from the start of the 7-day window to LOCAL MIDNIGHT, over the days
+# that covers. Today is deliberately left out -- the count scans every
+# transcript touched this week, so it runs once a day (week-spend.py, in the
+# background, one at a time under a lock) and the bar only ever READS its
+# one-line cache. A stale key (new day, or the window turned over) is what kicks
+# the recount; until it lands the cell is simply absent, never yesterday's
+# figure under today's label. Hidden while the window holds no complete day.
+# A bare space in front, no pipe: the "$" already marks where the cell starts,
+# and "/ 3wd11h $1840/6d" cannot be misread as one figure.
+if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
+  _ws_file="${CLAUDE_WEEK_SPEND_FILE:-$HOME/.claude/week-spend}"
+  _ws_key="$((week_reset - 604800)) $(date +%F)"
+  _ws_start='' _ws_date='' _ws_usd='' _ws_days=''
+  [ -r "$_ws_file" ] && read -r _ws_start _ws_date _ws_usd _ws_days < "$_ws_file" 2>/dev/null
+  case "$_ws_start $_ws_date" in
+    "$_ws_key")
+      _ws_usd=$(printf '%.0f' "$_ws_usd" 2>/dev/null)
+      _ws_days=$(printf '%.0f' "$_ws_days" 2>/dev/null)
+      [ "${_ws_days:-0}" -gt 0 ] 2>/dev/null \
+        && out="$out \$${_ws_usd}/${_ws_days}d"
+      ;;
+    *)
+      [ -x "$HOME/.claude/hooks/week-spend.py" ] \
+        && nohup "$HOME/.claude/hooks/week-spend.py" "$week_reset" >/dev/null 2>&1 </dev/null &
+      ;;
+  esac
+  unset _ws_file _ws_key _ws_start _ws_date _ws_usd _ws_days
+fi
+
 # --- Subagents in flight: "+{O5h×2,S5m}" glued onto the model segment -------
 # WHAT IT SAYS: how many subagents are working right now, on which brain, at
 # which effort — "+{O5h×2,S5m}" is two Opus-5-high agents plus one Sonnet-5-medium.
@@ -4000,11 +4085,11 @@ echo "$out"
 
 ## The quota hooks — `~/.claude/hooks/`
 
-The three scripts the quota segments and the auto-suspend are built on, embedded
+The scripts the quota segments, the week's spend and the auto-suspend are built on, embedded
 the same way and for the same reason as the status line above: so this one file
 is enough to reproduce the whole thing. Save each to the path in its heading,
 `chmod +x`, and — for the gate only — add the `hooks` block from §2. They are
-snapshots of `claude/hooks/*.sh` in the repo this file ships from and must be
+snapshots of `claude/hooks/*` in the repo this file ships from and must be
 re-synced whenever those change; `./check-sync.sh` is what notices when they
 aren't.
 
@@ -4671,3 +4756,172 @@ four against the blocks above. This file documents them **and embeds a verbatim
 copy of each**, so the whole thing ships with the repo. Keep them in lockstep — a
 behaviour change must update the script, this documentation, and the embedded
 copy in the same change (see the rule in the script header).*
+
+---
+
+## Hook 4 — `~/.claude/hooks/week-spend.py`
+
+The once-a-day counter behind [§4.1](#41-weeks-spend-at-api-prices--18406d):
+prices every assistant message of the current weekly window, up to local
+midnight, at API list rates, and writes the one line the bar reads. Kicked by
+the status line, in the background, whenever that line's key is stale; needs
+no `hooks` entry of its own.
+
+```python
+#!/usr/bin/env python3
+# What this week's Claude Code usage would have cost at API prices -- the
+# "$1840/6d" at the far end of the status line.
+#
+# The subscription hides the money: the weekly cell says how much of the
+# ALLOWANCE is gone, never what that allowance is worth. This adds up every
+# assistant message in ~/.claude/projects/**/*.jsonl (subagent transcripts
+# included) at the per-MTok rates of the model that answered it, so the bar can
+# say what the week has burned in the only unit that compares across plans,
+# models and people.
+#
+# THE FIGURE STOPS AT LOCAL MIDNIGHT. It covers the weekly window from its start
+# up to the end of YESTERDAY, never today. That makes it a once-a-day job: the
+# scan reads every transcript touched this week (hundreds of MB), which is fine
+# once a day in the background and absurd on every render of every terminal. A
+# number that moves once a day also matches what it is for -- a rate to compare
+# against the week's pace, not a meter to watch.
+#
+# Cached in ~/.claude/week-spend as one line:
+#   "<window_start> <date> <usd> <days>"
+# keyed by the window start AND today's local date: either changing (a new day,
+# or the window turning over) makes the status line kick a recount; otherwise it
+# reads the line and does no work at all. <days> is the span the dollars cover,
+# window start -> midnight, in days rounded to one decimal.
+#
+#   week-spend.py <weekly_resets_at_epoch>   recount if the cache is stale
+#   week-spend.py <epoch> --force            recount regardless
+#
+# Env: CLAUDE_WEEK_SPEND_FILE (the cache), CLAUDE_PROJECTS_DIR (the transcripts).
+#
+# Prices are the API list prices, $/MTok of base input, matched on the model ID
+# in the same order as the status line's own table (x.5 before x, because
+# "opus-5" is a prefix of "opus-5-5"). Output is 5x input, cache writes 1.25x
+# (5m) / 2x (1h), cache reads the model's read multiplier. From the pricing
+# page, 2026-09-30.
+import datetime
+import json
+import os
+import pathlib
+import sys
+import time
+
+RATES = [  # (substring of the model id, input $/MTok, cache-read multiplier)
+    ("fable-5-1", 10, 0.025), ("mythos-5-1", 10, 0.025),
+    ("fable", 10, 0.1), ("mythos", 10, 0.1),
+    ("opus-5-5", 4, 0.05),
+    ("opus-4-1", 15, 0.1), ("opus-4-0", 15, 0.1), ("opus-4-2025", 15, 0.1),
+    ("opus", 5, 0.1),
+    ("sonnet-5", 2, 0.1), ("sonnet", 3, 0.1),
+    ("haiku-3", 0.8, 0.1), ("haiku", 1, 0.1),
+]
+WEB_SEARCH_USD = 0.01  # $10 per 1000 searches
+
+
+def rate(model):
+    for key, inp, rd in RATES:
+        if key in model:
+            return inp, rd
+    return 5, 0.1
+
+
+def cost(model, u):
+    inp, rd = rate(model)
+    cc = u.get("cache_creation") or {}
+    w5 = cc.get("ephemeral_5m_input_tokens")
+    w1 = cc.get("ephemeral_1h_input_tokens")
+    if w5 is None and w1 is None:  # older transcripts: no TTL split, assume 5m
+        w5, w1 = u.get("cache_creation_input_tokens") or 0, 0
+    tok = ((u.get("input_tokens") or 0) * inp
+           + (w5 or 0) * inp * 1.25 + (w1 or 0) * inp * 2
+           + (u.get("cache_read_input_tokens") or 0) * inp * rd
+           + (u.get("output_tokens") or 0) * inp * 5)
+    web = ((u.get("server_tool_use") or {}).get("web_search_requests") or 0) * WEB_SEARCH_USD
+    return tok / 1e6 + web
+
+
+def iso(epoch):
+    return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def main():
+    if len(sys.argv) < 2 or not sys.argv[1].isdigit():
+        sys.exit("usage: week-spend.py <weekly_resets_at_epoch> [--force]")
+    reset = int(sys.argv[1])
+    start = reset - 604800
+    out = pathlib.Path(os.environ.get("CLAUDE_WEEK_SPEND_FILE", pathlib.Path.home() / ".claude/week-spend"))
+    root = pathlib.Path(os.environ.get("CLAUDE_PROJECTS_DIR", pathlib.Path.home() / ".claude/projects"))
+    today = datetime.date.today()
+    key = f"{start} {today.isoformat()}"
+    if "--force" not in sys.argv:
+        try:
+            if out.read_text().startswith(key + " "):
+                return
+        except OSError:
+            pass
+    # One recount at a time: every terminal notices the new day on the same
+    # render, and they must not all scan the same hundreds of MB at once. A lock
+    # older than 10 minutes is a crashed run, not a running one.
+    lock = pathlib.Path(str(out) + ".lock")
+    try:
+        lock.mkdir()
+    except FileExistsError:
+        if time.time() - lock.stat().st_mtime < 600:
+            return
+    try:
+        midnight = int(time.mktime(today.timetuple()))
+        if midnight <= start:  # the window opened today: nothing complete yet
+            usd = 0.0
+        else:
+            lo, hi = iso(start), iso(midnight)
+            usd, seen = 0.0, set()
+            for f in root.rglob("*.jsonl"):
+                try:
+                    if f.stat().st_mtime < start:
+                        continue
+                    fh = f.open(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                with fh:
+                    for line in fh:
+                        # Cheap filters first: almost every line is a user
+                        # message, a tool result or an attachment.
+                        if '"usage"' not in line or '"assistant"' not in line:
+                            continue
+                        try:
+                            d = json.loads(line)
+                        except ValueError:
+                            continue
+                        ts = d.get("timestamp") or ""
+                        if not (lo <= ts[:19] < hi):
+                            continue
+                        m = d.get("message") or {}
+                        model = m.get("model") or ""
+                        u = m.get("usage")
+                        if not u or model == "<synthetic>":
+                            continue
+                        # Each content block of one response is its own line,
+                        # carrying the same message id and the same usage.
+                        mid = m.get("id") or d.get("requestId")
+                        if mid in seen:
+                            continue
+                        seen.add(mid)
+                        usd += cost(model, u)
+        days = round((max(midnight, start) - start) / 86400, 1)
+        tmp = out.with_name(out.name + f".tmp.{os.getpid()}")
+        tmp.write_text(f"{key} {usd:.2f} {days}\n")
+        tmp.replace(out)
+    finally:
+        try:
+            lock.rmdir()
+        except OSError:
+            pass
+
+
+if __name__ == "__main__":
+    main()
+```

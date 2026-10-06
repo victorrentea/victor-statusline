@@ -32,6 +32,10 @@ git -C "$DEMO" init -q -b fix-cache
 git -C "$DEMO" -c user.email=x@y -c user.name=x commit -q --allow-empty -m init
 
 now=$(date +%s); rs=$((now + 12000)); wr=$((now + 220000))
+# The week's API-price spend is read from a once-a-day cache, never counted by
+# the bar, so the picture gets its figure the same way: a cache line keyed to
+# this window and today.
+printf '%s %s 1839.62 4.0\n' "$((wr - 604800))" "$(date +%F)" > "$HOME/.claude/week-spend"
 
 # Same session in both cases; the only difference is that a subscription payload
 # carries `rate_limits` and an API-key one does not -- which is exactly the

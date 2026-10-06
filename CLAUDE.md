@@ -51,6 +51,10 @@ and compared by `check-sync.sh` like the rest. So for a hook the dance is: edit
 the live file, `cp` it into `claude/hooks/`, re-sync the embedded block, run the
 checker.
 
+`claude/hooks/week-spend.py` (Hook 4, embedded as a `python` block) is the
+exception: like the status line, its live copy `~/.claude/hooks/week-spend.py` is
+a **symlink** into this repo, so edit it here and only re-sync the embedded copy.
+
 ### Always run the checker before committing
 
 ```sh

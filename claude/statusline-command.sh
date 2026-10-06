@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code status line:
-#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend folder[@branch] 7d quota"
+#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend folder[@branch] 7d quota $week/Nd"
 #
 # Ordered by how fast each figure moves: the model line is fixed, the 5h window
 # and the spend change within a turn, the folder changes when you cd, and the
@@ -1769,6 +1769,38 @@ fi
 # Its leading separator is the folder's trailing one: a space when the chip is
 # there to divide them, the usual pipe when there is no folder segment at all.
 [ -n "$week_seg" ] && out="$out${_loc_sep:- | }$week_seg"
+
+# --- Week's spend at API prices, the very last cell: "$1840/6d" ---------------
+# The weekly cell says how much of the ALLOWANCE is gone, never what it is worth.
+# This is the week's usage priced as if every token had gone through an API key:
+# dollars from the start of the 7-day window to LOCAL MIDNIGHT, over the days
+# that covers. Today is deliberately left out -- the count scans every
+# transcript touched this week, so it runs once a day (week-spend.py, in the
+# background, one at a time under a lock) and the bar only ever READS its
+# one-line cache. A stale key (new day, or the window turned over) is what kicks
+# the recount; until it lands the cell is simply absent, never yesterday's
+# figure under today's label. Hidden while the window holds no complete day.
+# A bare space in front, no pipe: the "$" already marks where the cell starts,
+# and "/ 3wd11h $1840/6d" cannot be misread as one figure.
+if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
+  _ws_file="${CLAUDE_WEEK_SPEND_FILE:-$HOME/.claude/week-spend}"
+  _ws_key="$((week_reset - 604800)) $(date +%F)"
+  _ws_start='' _ws_date='' _ws_usd='' _ws_days=''
+  [ -r "$_ws_file" ] && read -r _ws_start _ws_date _ws_usd _ws_days < "$_ws_file" 2>/dev/null
+  case "$_ws_start $_ws_date" in
+    "$_ws_key")
+      _ws_usd=$(printf '%.0f' "$_ws_usd" 2>/dev/null)
+      _ws_days=$(printf '%.0f' "$_ws_days" 2>/dev/null)
+      [ "${_ws_days:-0}" -gt 0 ] 2>/dev/null \
+        && out="$out \$${_ws_usd}/${_ws_days}d"
+      ;;
+    *)
+      [ -x "$HOME/.claude/hooks/week-spend.py" ] \
+        && nohup "$HOME/.claude/hooks/week-spend.py" "$week_reset" >/dev/null 2>&1 </dev/null &
+      ;;
+  esac
+  unset _ws_file _ws_key _ws_start _ws_date _ws_usd _ws_days
+fi
 
 # --- Subagents in flight: "+{O5h×2,S5m}" glued onto the model segment -------
 # WHAT IT SAYS: how many subagents are working right now, on which brain, at

@@ -16,6 +16,7 @@ PAIRS = [
     ("claude/victor-claude-statusline.md",  "## Hook 1",          "sh",   "claude/hooks/quota-state.sh"),
     ("claude/victor-claude-statusline.md",  "## Hook 2",          "sh",   "claude/hooks/quota-probe.sh"),
     ("claude/victor-claude-statusline.md",  "## Hook 3",          "sh",   "claude/hooks/quota-gate.sh"),
+    ("claude/victor-claude-statusline.md",  "## Hook 4",          "python", "claude/hooks/week-spend.py"),
     ("copilot/victor-copilot-statusline.md", "## File 1",         "bash", "copilot/statusline.sh"),
     ("copilot/victor-copilot-statusline.md", "## File 2",         "bash", "copilot/quota-refresh.sh"),
     ("copilot/victor-copilot-statusline.md", "## File 3",         "bash", "copilot/turn-mark.sh"),
