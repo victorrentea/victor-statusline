@@ -283,9 +283,10 @@ BLOOM2="${ESC}[38;5;173m"   # #d7875f clay, Claude's own
 BLOOM3="${ESC}[38;5;209m"   # #ff875f coral
 BLOOM4="${ESC}[38;5;202m"   # #ff5f00 peak — full bloom, and the "$" flash
 
-# --- Blink ------------------------------------------------------------------
-# Two states, one second apart (refreshInterval 1): the FOREGROUND is either the
-# warning hue or the terminal's normal colour. Nothing in between.
+# --- Warning hue (was: Blink) ------------------------------------------------
+# No longer blinks (7 Oct 2026): the warning is a steady foreground hue. It used
+# to alternate between the hue and the terminal's normal colour once a second;
+# the history below explains why it was two states rather than a ramp.
 #
 # This replaces a six-step background ramp that breathed from black up to full
 # hue and back. The ramp had the failure mode of all gradients used as alarms:
@@ -302,13 +303,10 @@ pulse() {
     red) _col=$RED ;;
     *)   _col=$ORANGE ;;
   esac
-  # $now is the render's wall clock; the same second gives the same phase
-  # everywhere in the bar, so context and clock blink in unison.
-  if [ $(( ${now:-$(date +%s)} % 2 )) -eq 0 ]; then
-    printf '%s%s%s' "$_col" "$*" "$RESET"
-  else
-    printf '%s' "$*"
-  fi
+  # STEADY since 7 Oct 2026: Victor asked for no more blinking — the warning
+  # stays lit in its hue on every frame. The name and the call sites are kept
+  # so the "which cells light up together" logic below is unchanged.
+  printf '%s%s%s' "$_col" "$*" "$RESET"
 }
 
 if [ -n "$ctx" ]; then

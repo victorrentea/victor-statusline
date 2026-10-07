@@ -58,8 +58,8 @@ what changes with the amount is whether it moves. Below $2 it just sits there:
 Opus 5h 170K | ↑87% / 1h41 | $7.8 (>1h⇒+=$1.6) ⊂ $10 | ai | +15=82% / 3wd8h
 ```
 
-Above $2, `220K`, `>1h` and `$2.1` **blink red** in unison, one second on, one
-second off (§1.1); everything else holds still:
+Above $2, `220K`, `>1h` and `$2.1` turn **steady red** together (§1.1); they
+used to blink, and stopped on 7 Oct 2026 — the colour alone is the alarm:
 
 ```
 Opus 5h 220K | ↑87% / 1h42 | $1.5 (>1h⇒+=$2.1) ⊂ $23 | ai | +15=82% / 3wd8h
@@ -177,7 +177,7 @@ badge is only worth anything if it can be trusted.
   cheapest and the most expensive setting is the one abbreviation that must never
   happen.
 - The absolute token count (`50K`) is rendered **blue** when there is nothing to
-  worry about — and **blinks** when there is (§1.1).
+  worry about — and turns **red/orange** when there is (§1.1).
 - **On Opus and Fable the window size is not printed at all** — neither the
   `(1M)` the display name arrives with (`Opus 5 (1M context)`,
   `Fable 5.1 (1M context)`), nor the `/1M` after the token count. Both families
@@ -207,12 +207,12 @@ priority order:
 | it is **about to expire** (idle ≥ 0.8 × TTL) | orange / normal |
 | context is simply **enormous** (> 300K tokens) | red, **static** — on Opus/Fable **orange** > 300K, red only **≥ 650K** |
 
-The first two **also blink the `-N` clock and its `+=$…` price**, in the
-same colour on the same beat, and that pairing is the entire point: the clock
+The first two **also colour the `-N` clock and its `+=$…` price**, in the
+same colour, and that pairing is the entire point: the clock
 says how much time the cache has left, the token count says how much that cache
 is *worth*, and the price says it in money. Each alone answers a fraction of "is
 sitting here about to cost me a dollar", which is why they light up together
-rather than separately. The third trigger is standalone and does **not** blink —
+rather than separately. The third trigger is standalone and does **not** touch the clock —
 an oversized context is a standing fact, not an event, and there is nothing to
 do about it mid-turn.
 
@@ -253,7 +253,7 @@ sits there in plain text and a dear one starts moving:
 
 ```
 … | $7.8 (>1h⇒+=$1.4) ⊂ $10 | …    ← states the loss, stays still
-… | $7.8 (>1h⇒+=$2.1) ⊂ $10 | …    ← ">1h" and "$2.1" blink red
+… | $7.8 (>1h⇒+=$2.1) ⊂ $10 | …    ← ">1h" and "$2.1" turn red
 ```
 
 The alarm threshold used to be a flat 100K tokens, which is the wrong unit: what
@@ -2151,9 +2151,10 @@ BLOOM2="${ESC}[38;5;173m"   # #d7875f clay, Claude's own
 BLOOM3="${ESC}[38;5;209m"   # #ff875f coral
 BLOOM4="${ESC}[38;5;202m"   # #ff5f00 peak — full bloom, and the "$" flash
 
-# --- Blink ------------------------------------------------------------------
-# Two states, one second apart (refreshInterval 1): the FOREGROUND is either the
-# warning hue or the terminal's normal colour. Nothing in between.
+# --- Warning hue (was: Blink) ------------------------------------------------
+# No longer blinks (7 Oct 2026): the warning is a steady foreground hue. It used
+# to alternate between the hue and the terminal's normal colour once a second;
+# the history below explains why it was two states rather than a ramp.
 #
 # This replaces a six-step background ramp that breathed from black up to full
 # hue and back. The ramp had the failure mode of all gradients used as alarms:
@@ -2170,13 +2171,10 @@ pulse() {
     red) _col=$RED ;;
     *)   _col=$ORANGE ;;
   esac
-  # $now is the render's wall clock; the same second gives the same phase
-  # everywhere in the bar, so context and clock blink in unison.
-  if [ $(( ${now:-$(date +%s)} % 2 )) -eq 0 ]; then
-    printf '%s%s%s' "$_col" "$*" "$RESET"
-  else
-    printf '%s' "$*"
-  fi
+  # STEADY since 7 Oct 2026: Victor asked for no more blinking — the warning
+  # stays lit in its hue on every frame. The name and the call sites are kept
+  # so the "which cells light up together" logic below is unchanged.
+  printf '%s%s%s' "$_col" "$*" "$RESET"
 }
 
 if [ -n "$ctx" ]; then
