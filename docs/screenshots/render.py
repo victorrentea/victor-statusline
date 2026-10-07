@@ -218,7 +218,7 @@ SPECS = [
              "beside it: an agent inherits this session's effort level unless its own "
              "definition overrides it, which is what the bar shows for the seconds "
              "between a spawn and that agent's first completed response."),
-            (r"(?:\+(?:\d+×)?[A-Z][\d.]*[a-z]*)+(?= )", "spend",
+            (r"\+(?:\d+×)?[A-Z][\d.]*[a-z]*(?: \+(?:\d+×)?[A-Z][\d.]*[a-z]*)*(?= )", "spend",
              "the fan-out, <b>grouped rather than listed</b>: each entry is "
              "<code>+N×&lt;model&gt;&lt;effort&gt;</code>, the <code>N×</code> dropped for a "
              "single agent, biggest group first — a sum added onto the session's own model. Here: two Opus 5 at high effort "
@@ -226,8 +226,8 @@ SPECS = [
              "at all, renders bare (<code>H4.5</code>) rather than inventing a letter. "
              "One line per agent would be a roster; the bar has room for the "
              "<i>shape</i> of the fan-out, which is the part you act on — "
-             "<code>+21×F5.1h+3×O5h</code> says “mostly Fable, three Opus stragglers” "
-             "in sixteen columns. The chip disappears the moment the last agent is "
+             "<code>+21×F5.1h +3×O5h</code> says “mostly Fable, three Opus stragglers” "
+             "in seventeen columns. The chip disappears the moment the last agent is "
              "collected."),
         ],
     ),

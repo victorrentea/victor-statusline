@@ -304,19 +304,21 @@ parameter expansion, not `sed`: `$ctx_render` is full of ESC and `&` bytes that
 
 ---
 
-## 1.2 Subagents in flight — `+2×O5h+S5m`
+## 1.2 Subagents in flight — `+2×O5h +S5m`
 
 Glued onto the model segment while subagents are running, and absent otherwise:
 
 ```
-Opus 5h 60K +2×O5h+S5m | ↓48% / 4h44 | $0.3 -2m ⊂ $1.1 | victor-statusline | -1=-1% / 0m
+Opus 5h 60K +2×O5h +S5m | ↓48% / 4h44 | $0.3 -2m ⊂ $1.1 | victor-statusline | -1=-1% / 0m
 ```
 
 Two Opus-5 agents at high effort plus one Sonnet-5 at medium. Each group is
 `+N×<model><effort>`, the `N×` dropped when the group is a single agent, biggest
 group first. It reads as a sum added onto the session's own model — no braces,
-the count in front like a coefficient, a plain `+` between groups — because that
-is what it is: the extra brains working on top of this one. (It used to be
+the count in front like a coefficient, a space then `+` between groups — because that
+is what it is: the extra brains working on top of this one. The space is there
+because `+2×O5.5h+2×S5.5m` runs together into one token: the eye can't tell where
+one group's effort letter ends and the next group's count begins. (It used to be
 `+{O5h×2,S5m}`, which put the count after the model where the eye reaches it
 last, and spent two columns on braces that said nothing.)
 
@@ -330,8 +332,8 @@ A 24-way fan-out on Fable and a 24-way fan-out on Opus look identical while they
 run and differ by an order of magnitude on the bill.
 
 **Grouped, not listed.** One line per agent is a roster; the bar has room for
-the *shape* of the fan-out, which is what you actually act on. `+21×F5.1h+3×O5h`
-says "the bulk of this is Fable, with three Opus stragglers" in sixteen columns.
+the *shape* of the fan-out, which is what you actually act on. `+21×F5.1h +3×O5h`
+says "the bulk of this is Fable, with three Opus stragglers" in seventeen columns.
 
 **Where the data comes from.** Files Claude Code already writes, under
 `<transcript-dir>/<session-id>/subagents/`:
@@ -350,7 +352,7 @@ to *this* session's level, because that is what an agent inherits unless its own
 definition overrides it.
 
 A model with no reasoning-effort setting at all — Haiku — writes no `effort`
-field, and renders bare: `+2×H4.5+S5h` is two Haiku 4.5 agents and one
+field, and renders bare: `+2×H4.5 +S5h` is two Haiku 4.5 agents and one
 Sonnet 5 at high. This was found by running the thing: requiring `effort`
 alongside `model` when reading an agent's transcript meant every Haiku agent
 failed to resolve, was never cached, and fell back to the alias — rendering as
@@ -1873,7 +1875,7 @@ To reproduce this exact status line: save the script below to `~/.claude/statusl
 ```sh
 #!/bin/sh
 # Claude Code status line:
-#   "Model/e (ctx% of SIZE) [+N×agents+…] | 5h% / reset | spend folder[@branch] 7d quota $week/Nd"
+#   "Model/e (ctx% of SIZE) [+N×agents +…] | 5h% / reset | spend folder[@branch] 7d quota $week/Nd"
 #
 # Ordered by how fast each figure moves: the model line is fixed, the 5h window
 # and the spend change within a turn, the folder changes when you cd, and the
@@ -3673,9 +3675,9 @@ if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
   unset _ws_file _ws_key _ws_start _ws_date _ws_usd _ws_days
 fi
 
-# --- Subagents in flight: "+2×O5h+S5m" glued onto the model segment --------
+# --- Subagents in flight: "+2×O5h +S5m" glued onto the model segment --------
 # WHAT IT SAYS: how many subagents are working right now, on which brain, at
-# which effort — "+2×O5h+S5m" is two Opus-5-high agents plus one Sonnet-5-medium,
+# which effort — "+2×O5h +S5m" is two Opus-5-high agents plus one Sonnet-5-medium,
 # written as a sum added onto the session's own model: no braces, the count as a
 # coefficient in front, a plain "+" between groups.
 # Claude Code's own agent list under the bar names the agents but never the model
@@ -4013,7 +4015,7 @@ $_new"
           ord[j + 1] = k
         }
         s = ""
-        for (i = 1; i <= n; i++) s = s "+" (c[ord[i]] > 1 ? c[ord[i]] "×" : "") ord[i]
+        for (i = 1; i <= n; i++) s = s (i > 1 ? " +" : "+") (c[ord[i]] > 1 ? c[ord[i]] "×" : "") ord[i]
         printf "%s", s
       }')
     [ -n "$sub_chip" ] && sub_render=" ${GREEN}${sub_chip}${RESET}"
