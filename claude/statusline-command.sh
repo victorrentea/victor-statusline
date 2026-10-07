@@ -1,6 +1,6 @@
 #!/bin/sh
 # Claude Code status line:
-#   "Model/e (ctx% of SIZE) [+{subagents}] | 5h% / reset | spend folder[@branch] 7d quota $week/Nd"
+#   "Model/e (ctx% of SIZE) [+N×agents+…] | 5h% / reset | spend folder[@branch] 7d quota $week/Nd"
 #
 # Ordered by how fast each figure moves: the model line is fixed, the 5h window
 # and the spend change within a turn, the folder changes when you cd, and the
@@ -1800,9 +1800,11 @@ if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
   unset _ws_file _ws_key _ws_start _ws_date _ws_usd _ws_days
 fi
 
-# --- Subagents in flight: "+{O5h×2,S5m}" glued onto the model segment -------
+# --- Subagents in flight: "+2×O5h+S5m" glued onto the model segment --------
 # WHAT IT SAYS: how many subagents are working right now, on which brain, at
-# which effort — "+{O5h×2,S5m}" is two Opus-5-high agents plus one Sonnet-5-medium.
+# which effort — "+2×O5h+S5m" is two Opus-5-high agents plus one Sonnet-5-medium,
+# written as a sum added onto the session's own model: no braces, the count as a
+# coefficient in front, a plain "+" between groups.
 # Claude Code's own agent list under the bar names the agents but never the model
 # they got, and that is the fact which decides what a fan-out costs and how good
 # its answers will be: the same Task lands on Opus, Sonnet, Fable or Haiku
@@ -2138,8 +2140,8 @@ $_new"
           ord[j + 1] = k
         }
         s = ""
-        for (i = 1; i <= n; i++) s = s (s == "" ? "" : ",") ord[i] (c[ord[i]] > 1 ? "×" c[ord[i]] : "")
-        printf "+{%s}", s
+        for (i = 1; i <= n; i++) s = s "+" (c[ord[i]] > 1 ? c[ord[i]] "×" : "") ord[i]
+        printf "%s", s
       }')
     [ -n "$sub_chip" ] && sub_render=" ${GREEN}${sub_chip}${RESET}"
   fi
