@@ -105,6 +105,21 @@ nothing left to do — which is why neither chipped cell carries one (§2, §5).
 
 ---
 
+## 0. The remote-control phone — `📱`
+
+The very first glyph, present only while **/remote-control is on** for this
+session — i.e. while it can be driven from claude.ai or the phone app. With half
+a dozen identical terminals open, *which one did I bridge?* otherwise has no
+answer short of scrolling back to the `/remote-control is active` line.
+
+The signal is Claude Code's own presence file, `~/.claude/sessions/<pid>.json`,
+which carries a `bridgeSessionId` exactly while the session is bridged. `<pid>` is
+`$PPID` — the same handle the mic's tty lookup below uses — so it is one builtin `read` of a
+one-line file and no fork, on a bar that re-renders every few seconds.
+
+Bare, not on a badge like the mic below: it is a standing mode, not a target the
+eye has to find in a hurry, and it sits at column 0 where nothing competes with it.
+
 ## 0. The bound-session microphone — `🎙️`
 
 A white-on-red badge in front of the model name, present only when **Walkie
@@ -2287,7 +2302,17 @@ if [ -n "$_bt" ]; then
 fi
 unset _bt _mytty _ttyf
 
-out="${mic}${model}@@SUB@@"
+# 📱 = this session is reachable from the phone (/remote-control is on). Claude
+# Code's presence file `~/.claude/sessions/<pid>.json` — $PPID is that pid, as
+# above — carries a `bridgeSessionId` exactly while the session is bridged to
+# claude.ai. One builtin `read` of a one-line file, no fork.
+rc=""
+_ps=""
+[ -r "$HOME/.claude/sessions/$PPID.json" ] && read -r _ps < "$HOME/.claude/sessions/$PPID.json" 2>/dev/null
+case "$_ps" in *'"bridgeSessionId"'*) rc="📱 " ;; esac
+unset _ps
+
+out="${rc}${mic}${model}@@SUB@@"
 
 # quota-gate.sh writes the wake epoch and the window that caused this terminal
 # to park. Old one-field markers predate weekly gating and are therefore 5h.
