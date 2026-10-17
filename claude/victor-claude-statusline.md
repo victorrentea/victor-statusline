@@ -105,7 +105,7 @@ nothing left to do — which is why neither chipped cell carries one (§2, §5).
 
 ---
 
-## 0. The remote-control phone — `📱`
+## 0. The remote-control globe — `🌐`
 
 The very first glyph, present only while **/remote-control is on** for this
 session — i.e. while it can be driven from claude.ai or the phone app. With half
@@ -2302,14 +2302,14 @@ if [ -n "$_bt" ]; then
 fi
 unset _bt _mytty _ttyf
 
-# 📱 = this session is reachable from the phone (/remote-control is on). Claude
+# 🌐 = this session is reachable remotely (/remote-control is on). Claude
 # Code's presence file `~/.claude/sessions/<pid>.json` — $PPID is that pid, as
 # above — carries a `bridgeSessionId` exactly while the session is bridged to
 # claude.ai. One builtin `read` of a one-line file, no fork.
 rc=""
 _ps=""
 [ -r "$HOME/.claude/sessions/$PPID.json" ] && read -r _ps < "$HOME/.claude/sessions/$PPID.json" 2>/dev/null
-case "$_ps" in *'"bridgeSessionId"'*) rc="📱 " ;; esac
+case "$_ps" in *'"bridgeSessionId"'*) rc="🌐 " ;; esac
 unset _ps
 
 out="${rc}${mic}${model}@@SUB@@"
