@@ -72,6 +72,21 @@ COLS="${COPILOT_STATUSLINE_COLS:-}"
 [ -z "$COLS" ] && COLS="$(tput cols 2>/dev/null)"
 case "$COLS" in ''|*[!0-9]*) COLS=0 ;; esac
 
+# --- the bound-session microphone -------------------------------------------
+# Black 🎙️ on yellow in front of the line when Walkie Talkie is bound to THIS
+# session — the same badge as victor-claude-statusline.md §0, for the same
+# reason: in a screen of identical terminals the bar is the one place that says
+# which of them the dictation goes to. The relay publishes the bound tty as the
+# first line of ~/.walkie-talkie/bound-tty; Copilot CLI ($PPID) holds the
+# session's terminal. Nothing bound = one failed builtin `read`, no fork.
+MIC=""
+_bt=""
+[ -r "$HOME/.walkie-talkie/bound-tty" ] && read -r _bt < "$HOME/.walkie-talkie/bound-tty" 2>/dev/null
+if [ -n "$_bt" ]; then
+  _mytty=$(ps -o tty= -p $PPID 2>/dev/null | tr -d ' ')
+  [ "$_bt" = "$_mytty" ] && MIC=1
+fi
+
 # --- refresh the monthly-quota cache in the background when stale (non-blocking) --
 now=$(date +%s 2>/dev/null || echo 0)
 # GNU `stat -c` first: on GNU `stat -f` exits 1 yet still prints a block of
@@ -84,7 +99,7 @@ if [ "$(( now - cmtime ))" -ge "$TTL" ] && [ "$(( now - lmtime ))" -ge "$TTL" ];
   [ -f "$DIR/quota-refresh.sh" ] && nohup bash "$DIR/quota-refresh.sh" "$CACHE" >/dev/null 2>&1 &
 fi
 
-python3 - "$INPUT" "$CACHE" "$COLS" <<'PY'
+python3 - "$INPUT" "$CACHE" "$COLS" "$MIC" <<'PY'
 import sys, json, os, time
 
 raw   = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -498,5 +513,6 @@ def fit(s, cols):
         keep.append(s[i]); w += cw(s[i]); i += 1
     return "".join(keep) + "…" + CLR_RESET   # reset: the cut may drop one
 
-print(fit(" | ".join(parts), cols))
+mic = "\033[1;30;48;5;226m 🎙️ \033[0m " if len(sys.argv) > 4 and sys.argv[4] else ""
+print(fit(mic + " | ".join(parts), cols))
 PY
