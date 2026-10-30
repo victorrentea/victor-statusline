@@ -115,3 +115,8 @@ colours, thresholds, turn-state logic). The doc is written as prose that argues
 *why* each choice was made, so when a decision is reversed, **rewrite the passage
 that argued for the old behaviour** — don't just append the new rule underneath
 it and leave the doc making both cases at once.
+
+## Memoria lui Claude
+
+Memoria generală (cine e Victor, cum vrea să lucrezi) e în repo-ul privat `victorrentea/assistant`.
+Într-o sesiune din cloud, atașează-l la sesiune și urmează-i `CLAUDE.md`-ul. Pe Mac se încarcă singură.
