@@ -68,6 +68,9 @@
 #                                          and stamps a top-level probed_at. A non-numeric
 #                                          (or -1) <used> keeps that window's stored
 #                                          reading instead of blanking it.
+#                                          <u5>="none" records that the plan has
+#                                          NO 5h window (source=none, used=-1);
+#                                          publish/set then echo "none" as u5.
 #                                          Echoes the same line as publish.
 #   quota-state.sh read                 -> echoes stored "u5 r5 m5 source"  (five_hour)
 #   quota-state.sh read7                -> echoes stored "u7 r7 m7 source"  (seven_day)
@@ -141,7 +144,10 @@ merge() {
   case "$_om" in ''|*[!0-9]*) _om=0 ;; esac
   # A probe reading younger than two probe intervals is an account measurement.
   # Even a "fresh" session value may be an old-plan cache on first render.
-  if [ "$_os" = probe ] && [ "$((_now - _om))" -lt "$((2 * PROBE_SECS))" ]; then
+  # "none" is the probe saying the plan has no such window at all; it outranks
+  # sessions the same way, so a terminal idle since the old plan cannot bring
+  # a dead 5h figure back.
+  if { [ "$_os" = probe ] || [ "$_os" = none ]; } && [ "$((_now - _om))" -lt "$((2 * PROBE_SECS))" ]; then
     echo "$_ou $_or $_om $_os"; return
   fi
   # Take the new reading when it is newer BY VALUE (the original order), or when
@@ -241,6 +247,7 @@ case "$1" in
                   "$used7" "$resets7" "$meas7" "$src7" "$(stored_probed_at)" "$now" \
                   "$oldS_used" "$oldS_resets" "$oldS_meas" "$oldS_label"
     fi
+    [ "$src" = none ] && used=none
     echo "$used $resets $used7 $resets7 $meas $oldS_used $oldS_label $oldS_resets"
     ;;
   set)
@@ -263,7 +270,11 @@ case "$1" in
                     labelS=$(printf '%s' "$oldS" | cut -d' ' -f4) ;;
       *)            usedS=$uS; resetsS=$rS; measS=$now; labelS=$lS ;;
     esac
-    case "$u5" in ''|*[!0-9.]*) new=$old ;; *) new="$u5 $r5 $now probe" ;; esac
+    case "$u5" in
+      none)         new="-1 0 $now none" ;;
+      ''|*[!0-9.]*) new=$old ;;
+      *)            new="$u5 $r5 $now probe" ;;
+    esac
     case "$u7" in ''|*[!0-9.]*) new7=$old7 ;; *) new7="$u7 $r7 $now probe" ;; esac
     used=$(printf  '%s' "$new"  | cut -d' ' -f1)
     resets=$(printf '%s' "$new"  | cut -d' ' -f2)
@@ -276,6 +287,7 @@ case "$1" in
     write_state "$used" "$resets" "$meas" "$src" \
                 "$used7" "$resets7" "$meas7" "$src7" "$now" "$now" \
                 "$usedS" "$resetsS" "$measS" "$labelS"
+    [ "$src" = none ] && used=none
     echo "$used $resets $used7 $resets7 $meas $usedS $labelS $resetsS"
     ;;
   *)

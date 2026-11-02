@@ -92,7 +92,7 @@ fetch() {
                             and (.percent | type) == "number")]
       | max_by(.percent)) as $s
     | (($s.scope.model.display_name // "") | gsub("[^A-Za-z0-9]"; "")) as $lbl
-    | "\(.five_hour.utilization // "-") \(.five_hour.resets_at // "-") \($w.percent // .seven_day.utilization // "-") \($w.resets_at // .seven_day.resets_at // "-") \($s.percent // "-") \($s.resets_at // "-") \(if $lbl == "" then "-" else $lbl end)"' \
+    | "\(if has("five_hour") and .five_hour == null then "none" else (.five_hour.utilization // "-") end) \(.five_hour.resets_at // "-") \($w.percent // .seven_day.utilization // "-") \($w.resets_at // .seven_day.resets_at // "-") \($s.percent // "-") \($s.resets_at // "-") \(if $lbl == "" then "-" else $lbl end)"' \
     2>/dev/null
 }
 
@@ -135,7 +135,11 @@ case "$u7" in
     exit 1
     ;;
 esac
-case "$u5" in ''|*[!0-9.]*) u5=-1 ;; esac
+# "none" is not a failed read: the account answered and its plan simply has no
+# 5h window (five_hour: null -- the case since 2026-10-31). quota-state.sh
+# records that as a fact so the bar drops the cell instead of keeping the last
+# 5h reading forever under a grey "?".
+case "$u5" in none) ;; ''|*[!0-9.]*) u5=-1 ;; esac
 # An account with no scoped cap this week is not an error -- the window is left
 # as "-", which quota-state.sh reads as "keep whatever you have" rather than
 # "the cap is zero".

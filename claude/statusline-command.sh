@@ -165,7 +165,9 @@ week_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
 rl_now="${five:-} ${reset:-0} ${week:-} ${week_reset:-0}"
 rl_seen="/tmp/claude-statusline-rl-${session_id:-default}.txt"
 fresh=0
-if [ -n "$five" ]; then
+# Keyed on EITHER window: a plan with no 5h window (2026-10-31 on) sends only
+# the weekly one, and gating on $five alone left that reading never "fresh".
+if [ -n "$five$week" ]; then
   [ "$(cat "$rl_seen" 2>/dev/null)" = "$rl_now" ] || fresh=1
   [ "$fresh" = 1 ] && printf '%s' "$rl_now" > "$rl_seen"
 fi
@@ -178,7 +180,13 @@ if [ -n "$merged" ]; then
   m_week=$(printf '%s' "$merged" | cut -d' ' -f3)
   m_week_reset=$(printf '%s' "$merged" | cut -d' ' -f4)
   m_meas=$(printf '%s' "$merged" | cut -d' ' -f5)
-  if [ "$m_five" != "-1" ]; then
+  # "none": the account's plan has no 5h window at all (the probe saw
+  # five_hour: null). The cell is dropped outright -- even if this session's
+  # payload still carries a 5h figure cached from before the plan changed.
+  if [ "$m_five" = none ]; then
+    five=""
+    reset=""
+  elif [ "$m_five" != "-1" ]; then
     five=$m_five
     reset=$m_reset
     case "$m_meas" in ''|*[!0-9]*|0) five_age=999999 ;;

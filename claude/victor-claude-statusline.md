@@ -494,6 +494,26 @@ agent (one `stat` on a directory that is not there).
 
 Tracks the rolling **5-hour** rate-limit window.
 
+### Plans with no 5-hour window — the cell disappears
+
+Since 2026-10-31 the account's plan has no 5-hour window: the usage endpoint
+answers `"five_hour": null` and sessions stop sending `rate_limits.five_hour`.
+Before this was handled, the bar kept the last 5h reading it had ever seen and
+showed it forever under the stale marker — a grey `100%?` for a window that no
+longer exists. A `?` says "unconfirmed"; here the honest answer is "not a
+thing", so the cell is **dropped**, not greyed.
+
+The probe is what decides: a `null` five_hour in an otherwise good answer is
+recorded in `quota.json` as `source: "none"`, and it outranks session readings
+exactly like a probe reading does (see Hook 1), so a terminal idle since the old
+plan cannot re-publish its frozen 5h figure and bring the cell back. If the plan
+regains a 5h window, the next probe writes a number and the cell returns on its
+own.
+
+A related fix rode along: a render only counted as having seen *fresh* headers
+when the payload had a 5h figure, so on such a plan the weekly reading could
+never be fresh either. Freshness is now keyed on either window.
+
 | Piece | Meaning | Source |
 |-------|---------|--------|
 | `↗` | burn-rate indicator (see below), colored, **leading** the number | derived |
@@ -2055,7 +2075,9 @@ week_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
 rl_now="${five:-} ${reset:-0} ${week:-} ${week_reset:-0}"
 rl_seen="/tmp/claude-statusline-rl-${session_id:-default}.txt"
 fresh=0
-if [ -n "$five" ]; then
+# Keyed on EITHER window: a plan with no 5h window (2026-10-31 on) sends only
+# the weekly one, and gating on $five alone left that reading never "fresh".
+if [ -n "$five$week" ]; then
   [ "$(cat "$rl_seen" 2>/dev/null)" = "$rl_now" ] || fresh=1
   [ "$fresh" = 1 ] && printf '%s' "$rl_now" > "$rl_seen"
 fi
@@ -2068,7 +2090,13 @@ if [ -n "$merged" ]; then
   m_week=$(printf '%s' "$merged" | cut -d' ' -f3)
   m_week_reset=$(printf '%s' "$merged" | cut -d' ' -f4)
   m_meas=$(printf '%s' "$merged" | cut -d' ' -f5)
-  if [ "$m_five" != "-1" ]; then
+  # "none": the account's plan has no 5h window at all (the probe saw
+  # five_hour: null). The cell is dropped outright -- even if this session's
+  # payload still carries a 5h figure cached from before the plan changed.
+  if [ "$m_five" = none ]; then
+    five=""
+    reset=""
+  elif [ "$m_five" != "-1" ]; then
     five=$m_five
     reset=$m_reset
     case "$m_meas" in ''|*[!0-9]*|0) five_age=999999 ;;
@@ -4209,6 +4237,9 @@ parses `quota.json` directly.
 #                                          and stamps a top-level probed_at. A non-numeric
 #                                          (or -1) <used> keeps that window's stored
 #                                          reading instead of blanking it.
+#                                          <u5>="none" records that the plan has
+#                                          NO 5h window (source=none, used=-1);
+#                                          publish/set then echo "none" as u5.
 #                                          Echoes the same line as publish.
 #   quota-state.sh read                 -> echoes stored "u5 r5 m5 source"  (five_hour)
 #   quota-state.sh read7                -> echoes stored "u7 r7 m7 source"  (seven_day)
@@ -4282,7 +4313,10 @@ merge() {
   case "$_om" in ''|*[!0-9]*) _om=0 ;; esac
   # A probe reading younger than two probe intervals is an account measurement.
   # Even a "fresh" session value may be an old-plan cache on first render.
-  if [ "$_os" = probe ] && [ "$((_now - _om))" -lt "$((2 * PROBE_SECS))" ]; then
+  # "none" is the probe saying the plan has no such window at all; it outranks
+  # sessions the same way, so a terminal idle since the old plan cannot bring
+  # a dead 5h figure back.
+  if { [ "$_os" = probe ] || [ "$_os" = none ]; } && [ "$((_now - _om))" -lt "$((2 * PROBE_SECS))" ]; then
     echo "$_ou $_or $_om $_os"; return
   fi
   # Take the new reading when it is newer BY VALUE (the original order), or when
@@ -4382,6 +4416,7 @@ case "$1" in
                   "$used7" "$resets7" "$meas7" "$src7" "$(stored_probed_at)" "$now" \
                   "$oldS_used" "$oldS_resets" "$oldS_meas" "$oldS_label"
     fi
+    [ "$src" = none ] && used=none
     echo "$used $resets $used7 $resets7 $meas $oldS_used $oldS_label $oldS_resets"
     ;;
   set)
@@ -4404,7 +4439,11 @@ case "$1" in
                     labelS=$(printf '%s' "$oldS" | cut -d' ' -f4) ;;
       *)            usedS=$uS; resetsS=$rS; measS=$now; labelS=$lS ;;
     esac
-    case "$u5" in ''|*[!0-9.]*) new=$old ;; *) new="$u5 $r5 $now probe" ;; esac
+    case "$u5" in
+      none)         new="-1 0 $now none" ;;
+      ''|*[!0-9.]*) new=$old ;;
+      *)            new="$u5 $r5 $now probe" ;;
+    esac
     case "$u7" in ''|*[!0-9.]*) new7=$old7 ;; *) new7="$u7 $r7 $now probe" ;; esac
     used=$(printf  '%s' "$new"  | cut -d' ' -f1)
     resets=$(printf '%s' "$new"  | cut -d' ' -f2)
@@ -4417,6 +4456,7 @@ case "$1" in
     write_state "$used" "$resets" "$meas" "$src" \
                 "$used7" "$resets7" "$meas7" "$src7" "$now" "$now" \
                 "$usedS" "$resetsS" "$measS" "$labelS"
+    [ "$src" = none ] && used=none
     echo "$used $resets $used7 $resets7 $meas $usedS $labelS $resetsS"
     ;;
   *)
@@ -4535,7 +4575,7 @@ fetch() {
                             and (.percent | type) == "number")]
       | max_by(.percent)) as $s
     | (($s.scope.model.display_name // "") | gsub("[^A-Za-z0-9]"; "")) as $lbl
-    | "\(.five_hour.utilization // "-") \(.five_hour.resets_at // "-") \($w.percent // .seven_day.utilization // "-") \($w.resets_at // .seven_day.resets_at // "-") \($s.percent // "-") \($s.resets_at // "-") \(if $lbl == "" then "-" else $lbl end)"' \
+    | "\(if has("five_hour") and .five_hour == null then "none" else (.five_hour.utilization // "-") end) \(.five_hour.resets_at // "-") \($w.percent // .seven_day.utilization // "-") \($w.resets_at // .seven_day.resets_at // "-") \($s.percent // "-") \($s.resets_at // "-") \(if $lbl == "" then "-" else $lbl end)"' \
     2>/dev/null
 }
 
@@ -4578,7 +4618,11 @@ case "$u7" in
     exit 1
     ;;
 esac
-case "$u5" in ''|*[!0-9.]*) u5=-1 ;; esac
+# "none" is not a failed read: the account answered and its plan simply has no
+# 5h window (five_hour: null -- the case since 2026-10-31). quota-state.sh
+# records that as a fact so the bar drops the cell instead of keeping the last
+# 5h reading forever under a grey "?".
+case "$u5" in none) ;; ''|*[!0-9.]*) u5=-1 ;; esac
 # An account with no scoped cap this week is not an error -- the window is left
 # as "-", which quota-state.sh reads as "keep whatever you have" rather than
 # "the cap is zero".
