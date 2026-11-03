@@ -16,9 +16,9 @@ Claude Code: $CLAUDE_CODE_SESSION_ID names the transcript
 Copilot (CLI and VS Code, same runtime and log): no session id reaches the shell,
   so the session is the one whose ~/.copilot/session-state/*/events.jsonl holds a
   still-unfinished tool call running this very script. Its last main-agent
-  session.usage_record gives model, prompt size and max prompt; the effort is the
-  reasoning_effort of the last main-conversation call (else the last model change,
-  else the session start).
+  session.usage_record gives model, prompt size and max prompt; the effort is that
+  record's own reasoningEffort (VS Code), else the reasoning_effort of the last
+  main-conversation call (CLI), else the last model change or the session start.
 
 Exits 1, printing nothing, when the session cannot be found.
 """
@@ -121,7 +121,7 @@ def copilot_session(max_age=3600):
 
 
 def copilot(path):
-    usage, effort, fallback_effort = None, None, None
+    usage, effort, fallback_effort, fallback_model = None, None, None, None
     for line in lines(path):
         if not any(k in line for k in ("usage_record", "usage_checkpoint", "model_change", "session.start")):
             continue
@@ -140,10 +140,15 @@ def copilot(path):
                     for m in (conv.get("models") or {}).values():
                         if m.get("reasoning_effort"):
                             effort = m["reasoning_effort"]
-        elif t in ("session.start", "session.model_change") and d.get("reasoningEffort"):
-            fallback_effort = d["reasoningEffort"]
-    if not usage:
+        elif t in ("session.start", "session.model_change"):
+            fallback_effort = d.get("reasoningEffort") or fallback_effort
+            fallback_model = d.get("newModel") or d.get("selectedModel") or fallback_model
+    if not usage:   # older CLIs (≤1.0.9x) log no usage records: model and effort only
+        if fallback_model and fallback_model != "auto":
+            return trailer(pretty_model(fallback_model), effort or fallback_effort, None, None)
         return None
+    # VS Code's runtime stamps the effort on the usage record itself; the CLI does not.
+    effort = usage.get("reasoningEffort") or effort
     model = usage.get("modelDisplayName") or pretty_model(usage.get("model") or "Copilot")
     return trailer(model, effort or fallback_effort, usage.get("inputTokens"), usage.get("maxPromptTokens"))
 
