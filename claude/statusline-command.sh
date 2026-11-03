@@ -40,6 +40,10 @@ utc_epoch() {
 }
 input=$(cat)
 session_id=$(echo "$input" | jq -r '.session_id // empty')
+# Hand the payload to ai-signature, which turns model + effort + context fill into
+# the Co-Authored-By trailer this session's commits are signed with — the agent
+# cannot see its own effort level or how full its window is; this payload can.
+[ -x "$HOME/bin/ai-signature" ] && { printf '%s' "$input" | "$HOME/bin/ai-signature" --record claude & } 2>/dev/null
 # --- Diagnostic hatch, off unless ~/.claude/statusline-debug exists ---------
 # Records what each terminal was HANDED and what it RENDERED, one line per
 # render. Off by default (one stat(2) per render); `touch` the flag file to arm.

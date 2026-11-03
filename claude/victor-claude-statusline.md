@@ -1903,6 +1903,22 @@ that every status line writes (~1×/sec) and reads back, for **both** windows:
 
 ---
 
+## Commit signature (optional)
+
+The payload this script receives is the only place an agent's model, reasoning
+effort and context fill are all visible at once — the agent itself cannot see its
+effort level or how full its window is, and when asked to sign its commits with
+them it guesses (sessions running on high signed `effort: low`). So, when
+`~/bin/ai-signature` exists ([`bin/ai-signature`](../bin/ai-signature) in this
+repo), every render pipes the payload into it in the background, and the agent
+runs it at commit time to get the finished trailer:
+
+```
+Co-Authored-By: Claude Opus 5.5 (effort: high, context: 230k/1M)
+```
+
+The script is absent on a plain install and the line is then a no-op.
+
 ## The full script — `~/.claude/statusline-command.sh`
 
 To reproduce this exact status line: save the script below to `~/.claude/statusline-command.sh`, make it executable (`chmod +x`), and wire it up with the `statusLine` block shown at the top of this file. It is embedded here verbatim so it ships with the course materials — this copy is a snapshot and must be re-synced whenever the canonical script changes.
@@ -1950,6 +1966,10 @@ utc_epoch() {
 }
 input=$(cat)
 session_id=$(echo "$input" | jq -r '.session_id // empty')
+# Hand the payload to ai-signature, which turns model + effort + context fill into
+# the Co-Authored-By trailer this session's commits are signed with — the agent
+# cannot see its own effort level or how full its window is; this payload can.
+[ -x "$HOME/bin/ai-signature" ] && { printf '%s' "$input" | "$HOME/bin/ai-signature" --record claude & } 2>/dev/null
 # --- Diagnostic hatch, off unless ~/.claude/statusline-debug exists ---------
 # Records what each terminal was HANDED and what it RENDERED, one line per
 # render. Off by default (one stat(2) per render); `touch` the flag file to arm.

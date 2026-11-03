@@ -61,6 +61,11 @@ CACHE="$HOME/.copilot/quota-cache.json"
 TTL=60    # refresh the quota cache at most once per minute (keeps AIC current)
 
 INPUT="$(cat 2>/dev/null)"
+# Hand the payload to ai-signature, which turns model + effort + context fill into
+# the Co-Authored-By trailer this session's commits are signed with. Keyed by
+# $PPID — the Copilot CLI process — which the agent's own shell commands find by
+# walking up their ancestry, since Copilot exports no session id to them.
+[ -x "$HOME/bin/ai-signature" ] && { printf '%s' "$INPUT" | "$HOME/bin/ai-signature" --record copilot "$PPID" & } 2>/dev/null
 
 # --- terminal width, for trimming the line to one row ----------------------
 # Copilot CLI captures our stdout, so $COLUMNS is not exported to us and
