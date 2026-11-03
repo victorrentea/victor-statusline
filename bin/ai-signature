@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
-"""The Co-Authored-By trailer an AI agent signs its commits with, measured, not guessed.
+"""Print the Co-Authored-By trailer this AI session signs its commits with — measured, not guessed.
 
     Co-Authored-By: Claude Opus 5.5 (effort: high, context: 230k/1M)
 
-An agent asked to sign with its own model, effort and context fill gets two of the
-three wrong: it does not know its effort level (sessions running on high signed
-"effort: low") and it cannot see how full its window is. The status line can — the
-harness hands it exactly those fields on every render — so each status line pipes
-its payload in here, and the agent reads back the finished line at commit time.
+An agent asked to sign with its own model, effort and context fill guesses (a
+session running on high signed "effort: low") and cannot see how full its window
+is. Its harness writes all three down, per model call, in its own session log —
+so the agent runs this right before committing and pastes the line verbatim.
 
-    ai-signature --record claude            # Claude Code status line: payload on stdin
-    ai-signature --record copilot <PID>     # Copilot CLI status line: payload on stdin, PID = $PPID
-    ai-signature                            # in the agent's shell: print the trailer
+Claude Code: $CLAUDE_CODE_SESSION_ID names the transcript
+  ~/.claude/projects/*/<id>.jsonl; the last main-thread assistant entry carries the
+  model, its "effort", and the usage whose input + cache read + cache write is the
+  prompt size of that call, i.e. how full the window was.
 
-The reader finds its own session by $CLAUDE_CODE_SESSION_ID (Claude Code exports
-it to every shell command) or else by walking up its process ancestry to the
-Copilot CLI process that also launched the status line. Exits 1 with nothing on
-stdout when no record matches, so a caller can fall back to writing it by hand.
+Copilot (CLI and VS Code, same runtime and log): no session id reaches the shell,
+  so the session is the one whose ~/.copilot/session-state/*/events.jsonl holds a
+  still-unfinished tool call running this very script. Its last main-agent
+  session.usage_record gives model, prompt size and max prompt; the effort is the
+  reasoning_effort of the last main-conversation call (else the last model change,
+  else the session start).
+
+Exits 1, printing nothing, when the session cannot be found.
 """
-import json, os, re, subprocess, sys, time
-
-STORE = os.path.expanduser("~/.ai-signature")
+import glob, json, os, re, sys, time
 
 
 def human(n):
@@ -30,32 +32,17 @@ def human(n):
     return f"{round(n / 1000)}k"
 
 
-def find(obj, *names):
-    """First scalar value for any of `names`, searched recursively (Copilot's
-    payload nests and renames its fields between releases)."""
-    for name in names:
-        stack = [obj]
-        while stack:
-            cur = stack.pop()
-            if isinstance(cur, dict):
-                if name in cur and not isinstance(cur[name], (dict, list)):
-                    return cur[name]
-                stack.extend(cur.values())
-            elif isinstance(cur, list):
-                stack.extend(cur)
-    return None
-
-
 def pretty_model(raw):
-    """claude-sonnet-5 -> Claude Sonnet 5, gpt-5.5 -> GPT-5.5, Opus 5.5 -> Claude Opus 5.5."""
-    raw = re.sub(r"\s*\([^)]*\)", "", raw).strip()           # "Opus 5.5 (1M context)"
+    """claude-opus-5-5 -> Claude Opus 5.5, claude-sonnet-5 -> Claude Sonnet 5, gpt-5.5 -> GPT-5.5"""
+    raw = re.sub(r"\[.*?\]|\s*\(.*?\)", "", raw).strip()
     low = raw.lower()
     if low.startswith("claude-"):
-        return "Claude " + " ".join(w.capitalize() for w in raw[7:].split("-"))
+        words = raw[7:].split("-")
+        name = [w.capitalize() for w in words if not w.isdigit()]
+        version = ".".join(w for w in words if w.isdigit())
+        return " ".join(["Claude", *name] + ([version] if version else []))
     if low.startswith("gpt-"):
         return "GPT-" + raw[4:]
-    if re.match(r"(opus|sonnet|haiku|fable)\b", low):
-        return "Claude " + raw
     return raw
 
 
@@ -65,112 +52,113 @@ def trailer(model, effort, used, size):
         details.append(f"effort: {effort}")
     if used is not None and size:
         details.append(f"context: {human(used)}/{human(size)}")
-    elif size:
-        details.append(f"context: {human(size)}")
     tail = f" ({', '.join(details)})" if details else ""
     return f"Co-Authored-By: {model}{tail}"
 
 
-def from_claude(d):
-    model = pretty_model((d.get("model") or {}).get("display_name") or "Claude")
-    effort = (d.get("effort") or {}).get("level")
-    cw = d.get("context_window") or {}
-    size = cw.get("context_window_size")
-    cu = cw.get("current_usage") or {}
-    used = None
-    if cu:
-        used = sum(cu.get(k) or 0 for k in
-                   ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-    elif cw.get("used_percentage") is not None and size:
-        used = float(cw["used_percentage"]) * float(size) / 100
-    return d.get("session_id"), trailer(model, effort, used, size)
+def lines(path):
+    with open(path, errors="replace") as f:
+        for line in f:
+            yield line
 
 
-def from_copilot(d):
-    # display_name looks like "claude-sonnet-5 · medium · 264K context"
-    name = find(d, "display_name", "displayName") or find(d, "id", "model") or "Copilot"
-    bits = [b.strip() for b in str(name).split(" · ") if "context" not in b.lower()]
-    model = pretty_model(bits[0] if bits else "Copilot")
-    effort = bits[1] if len(bits) > 1 and bits[1] else None
-    used = find(d, "current_context_tokens", "currentContextTokens")
-    size = find(d, "displayed_context_limit", "displayedContextLimit",
-                "context_window_size", "contextWindowSize")
-    return trailer(model, effort, used, size)
-
-
-def record(kind, pid):
-    try:
-        d = json.loads(sys.stdin.read() or "{}")
-    except ValueError:
-        return
-    if kind == "claude":
-        sid, line = from_claude(d)
-        if not sid:
-            return
-        key = f"claude-{sid}"
-    else:
-        key, line = f"copilot-{pid}", from_copilot(d)
-    os.makedirs(STORE, exist_ok=True)
-    path = os.path.join(STORE, key)
-    try:
-        with open(path) as f:
-            if f.read() == line:
-                os.utime(path)
-                return
-    except OSError:
-        pass
-    tmp = f"{path}.{os.getpid()}"
-    with open(tmp, "w") as f:
-        f.write(line)
-    os.replace(tmp, path)
-    prune()
-
-
-def prune(max_age=7 * 86400):
-    cutoff = time.time() - max_age
-    for n in os.listdir(STORE):
-        p = os.path.join(STORE, n)
+# --- Claude Code --------------------------------------------------------------
+def claude(sid):
+    paths = glob.glob(os.path.expanduser(f"~/.claude/projects/*/{sid}.jsonl"))
+    if not paths:
+        return None
+    last = None
+    for line in lines(paths[0]):
+        if '"assistant"' not in line or '"usage"' not in line:
+            continue
         try:
-            if os.path.getmtime(p) < cutoff:
-                os.unlink(p)
-        except OSError:
-            pass
-
-
-def ancestors():
-    pid = os.getppid()
-    while pid > 1:
-        yield pid
-        try:
-            out = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)],
-                                 capture_output=True, text=True).stdout.strip()
-            pid = int(out)
+            e = json.loads(line)
         except ValueError:
-            return
+            continue
+        if e.get("type") == "assistant" and not e.get("isSidechain") and (e.get("message") or {}).get("usage"):
+            last = e
+    if not last:
+        return None
+    msg = last["message"]
+    model_id = msg.get("model") or ""
+    u = msg["usage"]
+    used = sum(u.get(k) or 0 for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+    effort = last.get("effort") or os.environ.get("CLAUDE_EFFORT")
+    # The transcript records no window size. Opus and Fable only run at 1M here;
+    # anything else does only with the explicit [1m] suffix.
+    big = "[1m]" in model_id or re.search(r"opus|fable", model_id) or used > 200_000
+    return trailer(pretty_model(model_id), effort, used, 1_000_000 if big else 200_000)
 
 
-def read():
-    keys = []
-    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
-    if sid:
-        keys.append(f"claude-{sid}")
-    keys += [f"copilot-{p}" for p in ancestors()]
-    for key in keys:
+# --- Copilot ------------------------------------------------------------------
+def copilot_session(max_age=3600):
+    """events.jsonl of the session that is running this script right now."""
+    best, best_ts = None, ""
+    cutoff = time.time() - max_age
+    for path in glob.glob(os.path.expanduser("~/.copilot/session-state/*/events.jsonl")):
         try:
-            with open(os.path.join(STORE, key)) as f:
-                print(f.read())
-                return 0
+            if os.path.getmtime(path) < cutoff:
+                continue
         except OSError:
             continue
-    return 1
+        open_calls = {}
+        for line in lines(path):
+            if "tool.execution_" not in line:
+                continue
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            d = e.get("data") or {}
+            if e.get("type") == "tool.execution_start" and "ai-signature" in json.dumps(d.get("arguments")):
+                open_calls[d.get("toolCallId")] = e.get("timestamp") or ""
+            elif e.get("type") == "tool.execution_complete":
+                open_calls.pop(d.get("toolCallId"), None)
+        for ts in open_calls.values():
+            if ts >= best_ts:
+                best, best_ts = path, ts
+    return best
+
+
+def copilot(path):
+    usage, effort, fallback_effort = None, None, None
+    for line in lines(path):
+        if not any(k in line for k in ("usage_record", "usage_checkpoint", "model_change", "session.start")):
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        t, d = e.get("type"), e.get("data") or {}
+        if t == "session.usage_record":
+            u = d.get("usage") or {}
+            if u.get("interactionType") == "conversation-agent":
+                usage = u
+        elif t == "session.usage_checkpoint":
+            for conv in d.get("promptCacheBreakState") or []:
+                if conv.get("conversation") == "main":
+                    for m in (conv.get("models") or {}).values():
+                        if m.get("reasoning_effort"):
+                            effort = m["reasoning_effort"]
+        elif t in ("session.start", "session.model_change") and d.get("reasoningEffort"):
+            fallback_effort = d["reasoningEffort"]
+    if not usage:
+        return None
+    model = usage.get("modelDisplayName") or pretty_model(usage.get("model") or "Copilot")
+    return trailer(model, effort or fallback_effort, usage.get("inputTokens"), usage.get("maxPromptTokens"))
+
+
+def main():
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    line = claude(sid) if sid else None
+    if not line:
+        path = copilot_session()
+        line = copilot(path) if path else None
+    if not line:
+        return 1
+    print(line)
+    return 0
 
 
 if __name__ == "__main__":
-    a = sys.argv[1:]
-    if a[:1] == ["--record"]:
-        try:
-            record(a[1], a[2] if len(a) > 2 else os.getppid())
-        except Exception:
-            pass                       # never break a status line render
-        sys.exit(0)
-    sys.exit(read())
+    sys.exit(main())
