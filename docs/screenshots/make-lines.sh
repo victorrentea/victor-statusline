@@ -36,6 +36,8 @@ now=$(date +%s); rs=$((now + 12000)); wr=$((now + 220000))
 # the bar, so the picture gets its figure the same way: a cache line keyed to
 # this window and today.
 printf '%s %s 1839.62 4.0\n' "$((wr - 604800))" "$(date +%F)" > "$HOME/.claude/week-spend"
+# Today's live figure has its own cache, stamped now so the bar reads it as fresh.
+printf '%s %s 312.40 %s\n' "$((wr - 604800))" "$(date +%F)" "$now" > "$HOME/.claude/week-spend.today"
 
 # Same session in both cases; the only difference is that a subscription payload
 # carries `rate_limits` and an API-key one does not -- which is exactly the

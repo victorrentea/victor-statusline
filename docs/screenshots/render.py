@@ -173,12 +173,15 @@ SPECS = [
              "weekdays, with Saturday and Sunday subtracted, because a weekend burns no "
              "quota and flattered the number every Monday. Units it does not need are "
              "dropped, so under a day left prints as a bare <code>13h</code>."),
-            (r"\$\d+/\d+d$", "week",
-             "what this week has burned <b>at API prices</b>, over the days that covers: "
-             "every assistant message since the window opened, priced at the list rate "
-             "of the model that answered it. It stops at <b>local midnight</b> — today "
-             "is left out, because the count reads every transcript of the week and so "
-             "runs once a day in the background; the bar only reads its cache."),
+            (r"\$\d+ today", "week",
+             "what <b>today</b> has burned <b>at API prices</b>, local midnight to now: "
+             "every assistant message priced at the list rate of the model that answered "
+             "it. Only today&#39;s transcripts are read, so it is recounted in the "
+             "background every 5 minutes; the bar only reads its cache."),
+            (r"\$\d+/[\d.]+[dh]$", "week",
+             "the same, for the <b>whole weekly window</b> so far — since the quota last "
+             "reset, today included — over the span that covers. The closed days are "
+             "counted once a day; today&#39;s live figure is added on top."),
         ],
     ),
     dict(

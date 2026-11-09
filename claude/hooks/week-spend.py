@@ -25,6 +25,14 @@
 #
 #   week-spend.py <weekly_resets_at_epoch>   recount if the cache is stale
 #   week-spend.py <epoch> --force            recount regardless
+#   week-spend.py <epoch> --today            recount TODAY (midnight -> now)
+#                                            into ~/.claude/week-spend.today
+#
+# Today has its own live figure since 9 Nov 2026: a window that opened Sunday
+# 23:00 held one closed hour on Monday, the closed-days cell hid itself, and
+# the bar said nothing about money at all on the day that mattered. The live
+# part scans only what was touched since midnight, so it is cheap enough to
+# redo every few minutes.
 #
 # Env: CLAUDE_WEEK_SPEND_FILE (the cache), CLAUDE_PROJECTS_DIR (the transcripts).
 #
@@ -78,18 +86,72 @@ def iso(epoch):
     return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def scan(root, start, end):
+    """Dollars of every assistant message stamped in [start, end) epochs."""
+    if end <= start:
+        return 0.0
+    lo, hi = iso(start), iso(end)
+    usd, seen = 0.0, set()
+    for f in root.rglob("*.jsonl"):
+        try:
+            if f.stat().st_mtime < start:
+                continue
+            fh = f.open(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                # Cheap filters first: almost every line is a user
+                # message, a tool result or an attachment.
+                if '"usage"' not in line or '"assistant"' not in line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                ts = d.get("timestamp") or ""
+                if not (lo <= ts[:19] < hi):
+                    continue
+                m = d.get("message") or {}
+                model = m.get("model") or ""
+                u = m.get("usage")
+                if not u or model == "<synthetic>":
+                    continue
+                # Each content block of one response is its own line,
+                # carrying the same message id and the same usage.
+                mid = m.get("id") or d.get("requestId")
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                usd += cost(model, u)
+    return usd
+
+
+def write(out, text):
+    tmp = out.with_name(out.name + f".tmp.{os.getpid()}")
+    tmp.write_text(text)
+    tmp.replace(out)
+
+
 def main():
     if len(sys.argv) < 2 or not sys.argv[1].isdigit():
-        sys.exit("usage: week-spend.py <weekly_resets_at_epoch> [--force]")
+        sys.exit("usage: week-spend.py <weekly_resets_at_epoch> [--today] [--force]")
     reset = int(sys.argv[1])
     start = reset - 604800
     out = pathlib.Path(os.environ.get("CLAUDE_WEEK_SPEND_FILE", pathlib.Path.home() / ".claude/week-spend"))
     root = pathlib.Path(os.environ.get("CLAUDE_PROJECTS_DIR", pathlib.Path.home() / ".claude/projects"))
     today = datetime.date.today()
     key = f"{start} {today.isoformat()}"
+    live = "--today" in sys.argv
+    if live:
+        # TODAY is a second, live cache next to the daily one: only the
+        # transcripts touched since midnight, so a recount is a few seconds,
+        # and the bar re-kicks it every few minutes. Line:
+        #   "<window_start> <date> <usd> <written_at_epoch>"
+        out = out.with_name(out.name + ".today")
     if "--force" not in sys.argv:
         try:
-            if out.read_text().startswith(key + " "):
+            if out.read_text().startswith(key + " ") and not live:
                 return
         except OSError:
             pass
@@ -104,47 +166,14 @@ def main():
             return
     try:
         midnight = int(time.mktime(today.timetuple()))
-        if midnight <= start:  # the window opened today: nothing complete yet
-            usd = 0.0
+        if live:
+            now = int(time.time())
+            usd = scan(root, max(midnight, start), now + 60)
+            write(out, f"{key} {usd:.2f} {now}\n")
         else:
-            lo, hi = iso(start), iso(midnight)
-            usd, seen = 0.0, set()
-            for f in root.rglob("*.jsonl"):
-                try:
-                    if f.stat().st_mtime < start:
-                        continue
-                    fh = f.open(encoding="utf-8", errors="replace")
-                except OSError:
-                    continue
-                with fh:
-                    for line in fh:
-                        # Cheap filters first: almost every line is a user
-                        # message, a tool result or an attachment.
-                        if '"usage"' not in line or '"assistant"' not in line:
-                            continue
-                        try:
-                            d = json.loads(line)
-                        except ValueError:
-                            continue
-                        ts = d.get("timestamp") or ""
-                        if not (lo <= ts[:19] < hi):
-                            continue
-                        m = d.get("message") or {}
-                        model = m.get("model") or ""
-                        u = m.get("usage")
-                        if not u or model == "<synthetic>":
-                            continue
-                        # Each content block of one response is its own line,
-                        # carrying the same message id and the same usage.
-                        mid = m.get("id") or d.get("requestId")
-                        if mid in seen:
-                            continue
-                        seen.add(mid)
-                        usd += cost(model, u)
-        days = round((max(midnight, start) - start) / 86400, 1)
-        tmp = out.with_name(out.name + f".tmp.{os.getpid()}")
-        tmp.write_text(f"{key} {usd:.2f} {days}\n")
-        tmp.replace(out)
+            usd = scan(root, start, midnight)
+            days = round((max(midnight, start) - start) / 86400, 1)
+            write(out, f"{key} {usd:.2f} {days}\n")
     finally:
         try:
             lock.rmdir()

@@ -1786,36 +1786,63 @@ fi
 # there to divide them, the usual pipe when there is no folder segment at all.
 [ -n "$week_seg" ] && out="$out${_loc_sep:- | }$week_seg"
 
-# --- Week's spend at API prices, the very last cell: "$1840/6d" ---------------
+# --- Spend at API prices, the very last cell: "$71 today · $1840/6.4d" -------
 # The weekly cell says how much of the ALLOWANCE is gone, never what it is worth.
-# This is the week's usage priced as if every token had gone through an API key:
-# dollars from the start of the 7-day window to LOCAL MIDNIGHT, over the days
-# that covers. Today is deliberately left out -- the count scans every
-# transcript touched this week, so it runs once a day (week-spend.py, in the
-# background, one at a time under a lock) and the bar only ever READS its
-# one-line cache. A stale key (new day, or the window turned over) is what kicks
-# the recount; until it lands the cell is simply absent, never yesterday's
-# figure under today's label. Hidden while the window holds no complete day.
+# This is usage priced as if every token had gone through an API key, in two
+# figures: TODAY (local midnight -> now) and the WHOLE WINDOW (start of the
+# 7-day window -> now, today included), with the span that total covers.
+#
+# Two caches, both written by week-spend.py in the background under a lock, so
+# the bar only ever READS one-line files:
+#   ~/.claude/week-spend        window start -> midnight. Scans every transcript
+#                               touched this week, so it runs once a day: a
+#                               stale key (new day, window turned over) kicks it.
+#   ~/.claude/week-spend.today  midnight -> now. Scans only what was touched
+#                               today (~0.3 s), re-kicked when older than 5 min.
+# The window total is their sum. Until the closed-days count lands, only the
+# today figure shows -- never yesterday's total under today's label.
+#
+# It used to show the closed days alone and hide itself while the window held
+# none. A window that opened Sunday 23:00 then said nothing about money all of
+# Monday -- the day "how much have I burned since the reset" was most worth
+# asking (9 Nov 2026).
+#
 # A bare space in front, no pipe: the "$" already marks where the cell starts,
-# and "/ 3wd11h $1840/6d" cannot be misread as one figure.
+# and "/ 3wd11h $71 today" cannot be misread as one figure.
 if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
   _ws_file="${CLAUDE_WEEK_SPEND_FILE:-$HOME/.claude/week-spend}"
-  _ws_key="$((week_reset - 604800)) $(date +%F)"
-  _ws_start='' _ws_date='' _ws_usd='' _ws_days=''
+  _ws_start0=$((week_reset - 604800))
+  _ws_key="$_ws_start0 $(date +%F)"
+  _ws_now=$(date +%s)
+  _ws_start='' _ws_date='' _ws_usd='' _ws_days='' _ws_closed=''
   [ -r "$_ws_file" ] && read -r _ws_start _ws_date _ws_usd _ws_days < "$_ws_file" 2>/dev/null
-  case "$_ws_start $_ws_date" in
-    "$_ws_key")
-      _ws_usd=$(printf '%.0f' "$_ws_usd" 2>/dev/null)
-      _ws_days=$(printf '%.0f' "$_ws_days" 2>/dev/null)
-      [ "${_ws_days:-0}" -gt 0 ] 2>/dev/null \
-        && out="$out \$${_ws_usd}/${_ws_days}d"
-      ;;
-    *)
-      [ -x "$HOME/.claude/hooks/week-spend.py" ] \
-        && nohup "$HOME/.claude/hooks/week-spend.py" "$week_reset" >/dev/null 2>&1 </dev/null &
-      ;;
-  esac
-  unset _ws_file _ws_key _ws_start _ws_date _ws_usd _ws_days
+  if [ "$_ws_start $_ws_date" = "$_ws_key" ]; then
+    _ws_closed=$_ws_usd
+  elif [ -x "$HOME/.claude/hooks/week-spend.py" ]; then
+    nohup "$HOME/.claude/hooks/week-spend.py" "$week_reset" >/dev/null 2>&1 </dev/null &
+  fi
+  _wt_start='' _wt_date='' _wt_usd='' _wt_at=''
+  [ -r "$_ws_file.today" ] && read -r _wt_start _wt_date _wt_usd _wt_at < "$_ws_file.today" 2>/dev/null
+  [ "$_wt_start $_wt_date" = "$_ws_key" ] || _wt_usd=''
+  if { [ -z "$_wt_usd" ] || [ $((_ws_now - ${_wt_at:-0})) -gt 300 ] 2>/dev/null; } \
+     && [ -x "$HOME/.claude/hooks/week-spend.py" ]; then
+    nohup "$HOME/.claude/hooks/week-spend.py" "$week_reset" --today >/dev/null 2>&1 </dev/null &
+  fi
+  if [ -n "$_wt_usd" ]; then
+    _ws_cell="\$$(printf '%.0f' "$_wt_usd") today"
+    if [ -n "$_ws_closed" ]; then
+      _ws_span=$((_ws_now - _ws_start0))
+      if [ "$_ws_span" -lt 86400 ]; then
+        _ws_span="$((_ws_span / 3600))h"
+      else
+        _ws_span="$(awk -v s="$_ws_span" 'BEGIN{printf "%.1fd", s/86400}')"
+      fi
+      _ws_cell="$_ws_cell · \$$(awk -v a="$_ws_closed" -v b="$_wt_usd" 'BEGIN{printf "%.0f", a+b}')/$_ws_span"
+    fi
+    out="$out $_ws_cell"
+  fi
+  unset _ws_file _ws_key _ws_start _ws_start0 _ws_date _ws_usd _ws_days _ws_closed _ws_now \
+        _wt_start _wt_date _wt_usd _wt_at _ws_cell _ws_span
 fi
 
 # --- Subagents in flight: "+2×O5h +S5m" glued onto the model segment --------

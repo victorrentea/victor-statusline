@@ -1413,38 +1413,48 @@ is now only about five minutes.
 
 ---
 
-## 4.1 Week's spend at API prices — `$1840/6d`
+## 4.1 Spend at API prices — `$312 today · $2152/4.6d`
 
-The **very last** cell: what this week's usage would have cost **if every token
-had been paid for with an API key**, over the number of days that covers. The
-weekly cell before it says how much of the *allowance* is gone; it never says
+The **very last** cell: what usage would have cost **if every token had been
+paid for with an API key** — today so far, and the whole weekly window so far.
+The weekly cell before it says how much of the *allowance* is gone; it never says
 what that allowance is worth, and a subscription hides the money entirely. Dollars
 are the one unit that compares across plans, models and people — "I burn ~$300 a
 day" is a sentence anyone can weigh, "39% of a Max 20x week" is not.
 
 | Piece | Meaning | Source |
 |-------|---------|--------|
-| `$1840` | API-equivalent cost of every assistant message from the start of the 7-day window **to local midnight** | `~/.claude/week-spend`, written by `week-spend.py` |
-| `/6d` | the days those dollars cover — window start → midnight, rounded | same line |
+| `$312 today` | API-equivalent cost of every assistant message since **local midnight** | `~/.claude/week-spend.today`, written by `week-spend.py --today` |
+| `$2152` | the same since the **weekly window opened** (the last quota reset), today included | closed days from `~/.claude/week-spend` + today |
+| `/4.6d` | the span that total covers — window start → now; under a day it reads in hours, `/16h` | computed by the bar |
 
-### Yesterday, not today — counted once a day
+### Two counts: closed days once a day, today live
 
-The figure **stops at local midnight**. Today is deliberately not in it. Pricing
-the week means reading every transcript touched since the window opened —
+Pricing the week means reading every transcript touched since the window opened —
 hundreds of MB under `~/.claude/projects/**/*.jsonl`, subagent transcripts
 included — and that is a fine job once a day in the background and an absurd
-one on every render of every terminal. A number that moves once a day also fits
-what it is for: a *rate* to set against the weekly pace, not a meter to watch
-tick.
+one on every render of every terminal. So the closed days (window start → local
+midnight) are counted once a day into `~/.claude/week-spend`, one line
+`"<window_start> <date> <usd> <days>"`, keyed to **this** window and **today**:
+any mismatch — a new day, or the window turning over — makes that render kick
+`week-spend.py` in the background (one at a time, under a `mkdir` lock).
 
-So the bar never counts anything. It reads one line,
-`"<window_start> <date> <usd> <days>"`, and prints it only when the key matches
-**this** window and **today**. Any mismatch — a new day, or the window turning
-over — makes that render kick `week-spend.py` in the background (one at a time,
-under a `mkdir` lock) and print nothing in the meantime: yesterday's figure
-under today's label would be a wrong number that looks right. While the window
-holds no complete day yet (it opened today, or an hour before midnight) the
-cell is absent too — `$12/0d` says nothing.
+Today is the other half, and it is cheap: only the transcripts touched since
+midnight, about a quarter of a second. `week-spend.py --today` writes
+`"<window_start> <date> <usd> <written_at>"` to `~/.claude/week-spend.today`,
+and the bar re-kicks it whenever that line is more than 5 minutes old. The
+window total is the sum of the two.
+
+The bar never counts anything itself; it reads the two lines. Until the
+closed-days line for today lands, only `$312 today` shows — yesterday's total
+under today's label would be a wrong number that looks right.
+
+This cell used to show the closed days alone, stopping at midnight, and hid
+itself while the window held no complete day. On 9 Nov 2026 the window opened
+Sunday 23:00, so all of Monday the bar said nothing about money — on exactly
+the day "how much have I burned since the reset, and today?" was the question.
+Hence today as a live figure, and the total running to *now* rather than to
+midnight.
 
 ### How a message is priced
 
@@ -1460,9 +1470,10 @@ thousand web searches. `<synthetic>` messages cost nothing and are skipped.
 
 ### No `|` in front
 
-The cell follows the weekly reading with a bare space: `/ 3wd11h $1840/6d`. The
+The cell follows the weekly reading with a bare space: `/ 3wd11h $312 today`. The
 `$` already says where a new figure starts, and a pipe would have spent two
-columns separating two things nobody could read as one.
+columns separating two things nobody could read as one. The two figures inside
+the cell are split by a `·`, the lightest divider that still keeps them apart.
 
 ---
 
@@ -3696,36 +3707,63 @@ fi
 # there to divide them, the usual pipe when there is no folder segment at all.
 [ -n "$week_seg" ] && out="$out${_loc_sep:- | }$week_seg"
 
-# --- Week's spend at API prices, the very last cell: "$1840/6d" ---------------
+# --- Spend at API prices, the very last cell: "$71 today · $1840/6.4d" -------
 # The weekly cell says how much of the ALLOWANCE is gone, never what it is worth.
-# This is the week's usage priced as if every token had gone through an API key:
-# dollars from the start of the 7-day window to LOCAL MIDNIGHT, over the days
-# that covers. Today is deliberately left out -- the count scans every
-# transcript touched this week, so it runs once a day (week-spend.py, in the
-# background, one at a time under a lock) and the bar only ever READS its
-# one-line cache. A stale key (new day, or the window turned over) is what kicks
-# the recount; until it lands the cell is simply absent, never yesterday's
-# figure under today's label. Hidden while the window holds no complete day.
+# This is usage priced as if every token had gone through an API key, in two
+# figures: TODAY (local midnight -> now) and the WHOLE WINDOW (start of the
+# 7-day window -> now, today included), with the span that total covers.
+#
+# Two caches, both written by week-spend.py in the background under a lock, so
+# the bar only ever READS one-line files:
+#   ~/.claude/week-spend        window start -> midnight. Scans every transcript
+#                               touched this week, so it runs once a day: a
+#                               stale key (new day, window turned over) kicks it.
+#   ~/.claude/week-spend.today  midnight -> now. Scans only what was touched
+#                               today (~0.3 s), re-kicked when older than 5 min.
+# The window total is their sum. Until the closed-days count lands, only the
+# today figure shows -- never yesterday's total under today's label.
+#
+# It used to show the closed days alone and hide itself while the window held
+# none. A window that opened Sunday 23:00 then said nothing about money all of
+# Monday -- the day "how much have I burned since the reset" was most worth
+# asking (9 Nov 2026).
+#
 # A bare space in front, no pipe: the "$" already marks where the cell starts,
-# and "/ 3wd11h $1840/6d" cannot be misread as one figure.
+# and "/ 3wd11h $71 today" cannot be misread as one figure.
 if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
   _ws_file="${CLAUDE_WEEK_SPEND_FILE:-$HOME/.claude/week-spend}"
-  _ws_key="$((week_reset - 604800)) $(date +%F)"
-  _ws_start='' _ws_date='' _ws_usd='' _ws_days=''
+  _ws_start0=$((week_reset - 604800))
+  _ws_key="$_ws_start0 $(date +%F)"
+  _ws_now=$(date +%s)
+  _ws_start='' _ws_date='' _ws_usd='' _ws_days='' _ws_closed=''
   [ -r "$_ws_file" ] && read -r _ws_start _ws_date _ws_usd _ws_days < "$_ws_file" 2>/dev/null
-  case "$_ws_start $_ws_date" in
-    "$_ws_key")
-      _ws_usd=$(printf '%.0f' "$_ws_usd" 2>/dev/null)
-      _ws_days=$(printf '%.0f' "$_ws_days" 2>/dev/null)
-      [ "${_ws_days:-0}" -gt 0 ] 2>/dev/null \
-        && out="$out \$${_ws_usd}/${_ws_days}d"
-      ;;
-    *)
-      [ -x "$HOME/.claude/hooks/week-spend.py" ] \
-        && nohup "$HOME/.claude/hooks/week-spend.py" "$week_reset" >/dev/null 2>&1 </dev/null &
-      ;;
-  esac
-  unset _ws_file _ws_key _ws_start _ws_date _ws_usd _ws_days
+  if [ "$_ws_start $_ws_date" = "$_ws_key" ]; then
+    _ws_closed=$_ws_usd
+  elif [ -x "$HOME/.claude/hooks/week-spend.py" ]; then
+    nohup "$HOME/.claude/hooks/week-spend.py" "$week_reset" >/dev/null 2>&1 </dev/null &
+  fi
+  _wt_start='' _wt_date='' _wt_usd='' _wt_at=''
+  [ -r "$_ws_file.today" ] && read -r _wt_start _wt_date _wt_usd _wt_at < "$_ws_file.today" 2>/dev/null
+  [ "$_wt_start $_wt_date" = "$_ws_key" ] || _wt_usd=''
+  if { [ -z "$_wt_usd" ] || [ $((_ws_now - ${_wt_at:-0})) -gt 300 ] 2>/dev/null; } \
+     && [ -x "$HOME/.claude/hooks/week-spend.py" ]; then
+    nohup "$HOME/.claude/hooks/week-spend.py" "$week_reset" --today >/dev/null 2>&1 </dev/null &
+  fi
+  if [ -n "$_wt_usd" ]; then
+    _ws_cell="\$$(printf '%.0f' "$_wt_usd") today"
+    if [ -n "$_ws_closed" ]; then
+      _ws_span=$((_ws_now - _ws_start0))
+      if [ "$_ws_span" -lt 86400 ]; then
+        _ws_span="$((_ws_span / 3600))h"
+      else
+        _ws_span="$(awk -v s="$_ws_span" 'BEGIN{printf "%.1fd", s/86400}')"
+      fi
+      _ws_cell="$_ws_cell · \$$(awk -v a="$_ws_closed" -v b="$_wt_usd" 'BEGIN{printf "%.0f", a+b}')/$_ws_span"
+    fi
+    out="$out $_ws_cell"
+  fi
+  unset _ws_file _ws_key _ws_start _ws_start0 _ws_date _ws_usd _ws_days _ws_closed _ws_now \
+        _wt_start _wt_date _wt_usd _wt_at _ws_cell _ws_span
 fi
 
 # --- Subagents in flight: "+2×O5h +S5m" glued onto the model segment --------
@@ -4871,6 +4909,14 @@ no `hooks` entry of its own.
 #
 #   week-spend.py <weekly_resets_at_epoch>   recount if the cache is stale
 #   week-spend.py <epoch> --force            recount regardless
+#   week-spend.py <epoch> --today            recount TODAY (midnight -> now)
+#                                            into ~/.claude/week-spend.today
+#
+# Today has its own live figure since 9 Nov 2026: a window that opened Sunday
+# 23:00 held one closed hour on Monday, the closed-days cell hid itself, and
+# the bar said nothing about money at all on the day that mattered. The live
+# part scans only what was touched since midnight, so it is cheap enough to
+# redo every few minutes.
 #
 # Env: CLAUDE_WEEK_SPEND_FILE (the cache), CLAUDE_PROJECTS_DIR (the transcripts).
 #
@@ -4924,18 +4970,72 @@ def iso(epoch):
     return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def scan(root, start, end):
+    """Dollars of every assistant message stamped in [start, end) epochs."""
+    if end <= start:
+        return 0.0
+    lo, hi = iso(start), iso(end)
+    usd, seen = 0.0, set()
+    for f in root.rglob("*.jsonl"):
+        try:
+            if f.stat().st_mtime < start:
+                continue
+            fh = f.open(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                # Cheap filters first: almost every line is a user
+                # message, a tool result or an attachment.
+                if '"usage"' not in line or '"assistant"' not in line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                ts = d.get("timestamp") or ""
+                if not (lo <= ts[:19] < hi):
+                    continue
+                m = d.get("message") or {}
+                model = m.get("model") or ""
+                u = m.get("usage")
+                if not u or model == "<synthetic>":
+                    continue
+                # Each content block of one response is its own line,
+                # carrying the same message id and the same usage.
+                mid = m.get("id") or d.get("requestId")
+                if mid in seen:
+                    continue
+                seen.add(mid)
+                usd += cost(model, u)
+    return usd
+
+
+def write(out, text):
+    tmp = out.with_name(out.name + f".tmp.{os.getpid()}")
+    tmp.write_text(text)
+    tmp.replace(out)
+
+
 def main():
     if len(sys.argv) < 2 or not sys.argv[1].isdigit():
-        sys.exit("usage: week-spend.py <weekly_resets_at_epoch> [--force]")
+        sys.exit("usage: week-spend.py <weekly_resets_at_epoch> [--today] [--force]")
     reset = int(sys.argv[1])
     start = reset - 604800
     out = pathlib.Path(os.environ.get("CLAUDE_WEEK_SPEND_FILE", pathlib.Path.home() / ".claude/week-spend"))
     root = pathlib.Path(os.environ.get("CLAUDE_PROJECTS_DIR", pathlib.Path.home() / ".claude/projects"))
     today = datetime.date.today()
     key = f"{start} {today.isoformat()}"
+    live = "--today" in sys.argv
+    if live:
+        # TODAY is a second, live cache next to the daily one: only the
+        # transcripts touched since midnight, so a recount is a few seconds,
+        # and the bar re-kicks it every few minutes. Line:
+        #   "<window_start> <date> <usd> <written_at_epoch>"
+        out = out.with_name(out.name + ".today")
     if "--force" not in sys.argv:
         try:
-            if out.read_text().startswith(key + " "):
+            if out.read_text().startswith(key + " ") and not live:
                 return
         except OSError:
             pass
@@ -4950,47 +5050,14 @@ def main():
             return
     try:
         midnight = int(time.mktime(today.timetuple()))
-        if midnight <= start:  # the window opened today: nothing complete yet
-            usd = 0.0
+        if live:
+            now = int(time.time())
+            usd = scan(root, max(midnight, start), now + 60)
+            write(out, f"{key} {usd:.2f} {now}\n")
         else:
-            lo, hi = iso(start), iso(midnight)
-            usd, seen = 0.0, set()
-            for f in root.rglob("*.jsonl"):
-                try:
-                    if f.stat().st_mtime < start:
-                        continue
-                    fh = f.open(encoding="utf-8", errors="replace")
-                except OSError:
-                    continue
-                with fh:
-                    for line in fh:
-                        # Cheap filters first: almost every line is a user
-                        # message, a tool result or an attachment.
-                        if '"usage"' not in line or '"assistant"' not in line:
-                            continue
-                        try:
-                            d = json.loads(line)
-                        except ValueError:
-                            continue
-                        ts = d.get("timestamp") or ""
-                        if not (lo <= ts[:19] < hi):
-                            continue
-                        m = d.get("message") or {}
-                        model = m.get("model") or ""
-                        u = m.get("usage")
-                        if not u or model == "<synthetic>":
-                            continue
-                        # Each content block of one response is its own line,
-                        # carrying the same message id and the same usage.
-                        mid = m.get("id") or d.get("requestId")
-                        if mid in seen:
-                            continue
-                        seen.add(mid)
-                        usd += cost(model, u)
-        days = round((max(midnight, start) - start) / 86400, 1)
-        tmp = out.with_name(out.name + f".tmp.{os.getpid()}")
-        tmp.write_text(f"{key} {usd:.2f} {days}\n")
-        tmp.replace(out)
+            usd = scan(root, start, midnight)
+            days = round((max(midnight, start) - start) / 86400, 1)
+            write(out, f"{key} {usd:.2f} {days}\n")
     finally:
         try:
             lock.rmdir()

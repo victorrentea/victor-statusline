@@ -63,7 +63,7 @@ just ran next to the session it belongs to:
 | [`claude/victor-claude-statusline.md`](claude/victor-claude-statusline.md) | **Claude Code** status line — full reference and design rationale |
 | `claude/statusline-command.sh` | the script it documents |
 | `claude/hooks/quota-state.sh`, `quota-probe.sh`, `quota-gate.sh` | the machine-wide quota state it merges into, the live probe that keeps that state honest across a plan switch, and the request gate that parks a terminal on an exhausted window |
-| `claude/hooks/week-spend.py` | the once-a-day counter behind the bar's last cell, `$1840/6d`: the week's usage up to midnight, priced at API rates |
+| `claude/hooks/week-spend.py` | the counter behind the bar's last cell, `$312 today · $2152/4.6d`: today's and the weekly window's usage so far, priced at API rates |
 | [`copilot/victor-copilot-statusline.md`](copilot/victor-copilot-statusline.md) | **GitHub Copilot CLI** status line — full reference |
 | `copilot/statusline.sh`, `copilot/quota-refresh.sh` | the scripts it documents |
 | `claude/test-quota-gate.sh`, `test-statusline.sh` | regression harnesses for the gate and the bar |
@@ -175,8 +175,8 @@ where a turn starts; skip them and the bar simply omits it.
   every five minutes, so a plan switch shows within minutes instead of at the
   next window reset), `quota-gate.sh` (parks a terminal on an exhausted
   window). Without them it still runs and degrades to its fallback heuristics;
-  the doc says exactly where. `week-spend.py` prices the week at API rates
-  once a day for the last cell; without it that cell is simply absent.
+  the doc says exactly where. `week-spend.py` prices today and the week at API rates
+  for the last cell (closed days once a day, today every 5 min); without it that cell is simply absent.
   `quota-gate.sh` is the only one that needs its own
   `hooks` entry in `settings.json` — copying the file does nothing on its own.
 - **Nothing here sets the session title**, deliberately: any hook that emits
