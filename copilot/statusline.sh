@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copilot CLI status line. Example output:
-#   🤖 sonnet-5m 55/264K 21% | $0.09 ∈ Session: $0.4 | 26%↗ ($0.9/$3.5) left today | +3%⊂95% $66 (6646 AIC) / 20wd7h left
+#   🤖 sonnet-5m 55/264K 21% | $0.09 (-7m > 5m⇒+=$0.29) ∈ Session: $0.4 | 26%↗ ($0.9/$3.5) left today | +3%⊂95% $66 (6646 AIC) / 20wd7h left
 #
 #   • model: display_name with the "claude-" prefix stripped, the reasoning
 #     effort glued on as one letter (medium→m, high→h, xhigh→x, low→l) and the
@@ -21,6 +21,12 @@
 #     whereas the two segments after it come from a cache that is only
 #     refreshed while a session is busy, so they can sit hours behind. Shown to
 #     cents below a dollar: a turn is small change, and "$0.0" would say nothing.
+#   • cache clock, between the turn and the "∈": how long since the prompt cache
+#     was last touched and, near or past Copilot's own TTL for the model (5m for
+#     Claude, 30m for GPT), what the next message adds by rewriting the prefix —
+#     "(-7m > 5m⇒+=$0.29)". TTL, prefix size and per-token prices all come from
+#     the last session.usage_record in ~/.copilot/session-state/<sid>/events.jsonl.
+#     Needs "refreshInterval" in settings.json to tick while the session is idle.
 #   • today: share of today's budget still UNSPENT + ($ left/$ budget),
 #     where the budget is simply "credits left at the start of today ÷ working
 #     days left until the reset". Because it is recomputed from the CURRENT
@@ -282,26 +288,6 @@ if sid is not None and session_credits is not None:
     except Exception:
         pass
 
-# "$0.09 ∈ Session: $2.9" — Copilot's own footer three lines below says
-# "Session: 285.11 AIC used", so the bar answers in the same words, only in money:
-# two figures that disagree in unit and in wording read as two different things.
-# The turn hangs off it with "∈" rather than a label of its own: it IS one of the
-# turns that make up that session total, and the symbol says so in one column
-# where the word "turn" took five.
-if session_credits is not None:
-    seg = f"Session: {usd(session_credits)}"
-    if turn_credits is not None:
-        seg = f"{usd(turn_credits)} ∈ {seg}"
-    parts.append(seg)
-
-# --- AI Credits remaining, reserve, working-days to reset ------------------
-q = {}
-try:
-    with open(cache) as f:
-        q = json.load(f)
-except Exception:
-    q = {}
-
 from datetime import datetime, timezone, timedelta
 
 # One clock for the whole line. COPILOT_STATUSLINE_NOW (ISO-8601, with offset)
@@ -316,6 +302,124 @@ def _now():
         try: return datetime.fromisoformat(pin).astimezone(timezone.utc)
         except ValueError: pass
     return datetime.now(timezone.utc)
+
+# --- the prompt-cache clock: "(-7m > 5m⇒+=$0.33)" --------------------------
+# The same clause as the Claude Code bar (victor-claude-statusline.md, the idle
+# clock), for the same reason: walking back to an idle session, the question is
+# not only "what did that cost" but "what will my NEXT message cost", and past
+# the prompt-cache TTL the answer is the whole cached prefix written again at
+# the cache-WRITE price instead of read back at the cache-READ one.
+#
+# Nothing here is assumed. Copilot logs every model call as a
+# `session.usage_record` in ~/.copilot/session-state/<sid>/events.jsonl, and
+# each one carries what this needs:
+#   • cacheTtlSeconds + cacheExpiresAt — Copilot's OWN TTL for the model: 300
+#     for every Claude, 1800 for the GPT family. So the clock measures against
+#     5m or 30m depending on the model in play, never a hardcoded 5 minutes;
+#     the moment the prefix was last touched is cacheExpiresAt - TTL.
+#   • cacheReadTokens + cacheWriteTokens — the cached prefix that would be lost.
+#   • copilotUsage.tokenDetails — the per-token price of cache_read and
+#     cache_write for that exact model, in nano-credits per batch, so the price
+#     is what GitHub will actually bill, not a table copied from a pricing page.
+#
+#   miss = prefix tokens × (cache_write − cache_read) price
+#
+# It prices the WHOLE prefix, an upper bound: a cold Copilot session sometimes
+# still reads back the ~14K of system prompt and tools other sessions keep warm,
+# and sometimes reads back nothing — unlike Claude Code, the floor is not stable
+# enough to subtract.
+#
+# Shape and colours as on the Claude bar: a bare "-2m" while the prefix is
+# safe, orange in the last 20% before the TTL ("(-4m <= 5m⇒+=$0.33)": still
+# savable, and this is what it is worth), red once past it. Past an hour every
+# Copilot cache is gone, so the age collapses into ">1h" and the comparison
+# with the TTL is dropped. No blinking: a Copilot bar is redrawn on a timer
+# (refreshInterval), not every second, so a pulse would only stutter.
+#
+# The file is read from the END, in 256K chunks, at most 8 MB back: a long
+# session's log runs to tens of MB, and the record wanted is the last one.
+# Records from sub-agents name another sourceSessionId and are skipped: they
+# keep their own cache, not this conversation's.
+def last_usage(session_id):
+    path = os.path.join(os.path.expanduser("~"), ".copilot", "session-state",
+                        str(session_id), "events.jsonl")
+    try: f = open(path, "rb")
+    except OSError: return None
+    def pick(line):
+        if b'"session.usage_record"' not in line: return None
+        try: u = json.loads(line)["data"]["usage"]
+        except Exception: return None
+        src = (u.get("accounting") or {}).get("sourceSessionId")
+        if src and src != str(session_id): return None
+        return u if u.get("cacheExpiresAt") and u.get("cacheTtlSeconds") else None
+    with f:
+        f.seek(0, 2); end = pos = f.tell(); buf = b""
+        while pos > 0 and end - pos < (8 << 20):
+            step = min(262144, pos); pos -= step
+            f.seek(pos); buf = f.read(step) + buf
+            lines = buf.split(b"\n")
+            buf = lines[0]                 # maybe cut mid-line: kept for the next chunk
+            for ln in reversed(lines[1:]):
+                u = pick(ln)
+                if u: return u
+        return pick(buf) if pos == 0 else None
+
+def fmt_ttl(s):
+    return f"{s // 3600}h" if s >= 3600 and s % 3600 == 0 else f"{max(1, s // 60)}m"
+
+cache_clause = ""
+u = last_usage(sid) if sid is not None else None
+if u:
+    try:
+        ttl = int(u["cacheTtlSeconds"])
+        exp = datetime.fromisoformat(str(u["cacheExpiresAt"]).replace("Z", "+00:00"))
+        age = max(0, int((_now() - (exp - timedelta(seconds=ttl))).total_seconds()))
+    except (TypeError, ValueError, KeyError):
+        ttl = 0
+    if ttl > 0:
+        rel = f"-{age}s" if age < 60 else f"-{age // 60}m" if age < 3600 else ">1h"
+        if age < ttl * 4 // 5:
+            cache_clause = f" {rel}"
+        else:
+            hue = CLR_RED if age >= ttl else CLR_YEL
+            cmp_ = "" if rel == ">1h" else (f" > {fmt_ttl(ttl)}" if age >= ttl else f" <= {fmt_ttl(ttl)}")
+            rates = {t.get("tokenType"): float(t.get("costPerBatch") or 0) / float(t.get("batchSize") or 1)
+                     for t in ((u.get("copilotUsage") or {}).get("tokenDetails") or [])
+                     if isinstance(t, dict)}
+            w = rates.get("cache_write") or rates.get("input") or 0.0
+            r = rates.get("cache_read") or 0.0
+            prefix = (u.get("cacheReadTokens") or 0) + (u.get("cacheWriteTokens") or 0)
+            miss = prefix * max(0.0, w - r) / 1e9          # nano-credits -> credits
+            price = usd(miss)
+            if price in (None, "$0.00"):
+                cache_clause = f" {hue}{rel}{CLR_RESET}{cmp_}"
+            else:
+                cache_clause = f" ({hue}{rel}{CLR_RESET}{cmp_}⇒+={hue}{price}{CLR_RESET})"
+
+# "$0.09 ∈ Session: $2.9" — Copilot's own footer three lines below says
+# "Session: 285.11 AIC used", so the bar answers in the same words, only in money:
+# two figures that disagree in unit and in wording read as two different things.
+# The turn hangs off it with "∈" rather than a label of its own: it IS one of the
+# turns that make up that session total, and the symbol says so in one column
+# where the word "turn" took five.
+# The cache clause rides on the TURN figure when there is one — "what this turn
+# cost (and what the next one adds if you wait)", the Claude bar's order — and
+# on the session total before a session's first marked turn.
+if session_credits is not None:
+    seg = f"Session: {usd(session_credits)}"
+    if turn_credits is not None:
+        seg = f"{usd(turn_credits)}{cache_clause} ∈ {seg}"
+    else:
+        seg += cache_clause
+    parts.append(seg)
+
+# --- AI Credits remaining, reserve, working-days to reset ------------------
+q = {}
+try:
+    with open(cache) as f:
+        q = json.load(f)
+except Exception:
+    q = {}
 
 reset = q.get("reset_utc") or q.get("reset_date")
 reset_dt = None

@@ -243,6 +243,13 @@ PY
 # baseline the bar remembers), fire turn-mark.sh, then render again 8.6 credits
 # later. Anything less and the picture would be of a bar missing a segment.
 mkdir -p "$SB/home/.copilot/turn-state"
+# The prompt-cache clock reads the last session.usage_record Copilot logged for
+# the session, so the sandbox gets one: a Sonnet call whose 5-minute cache was
+# last touched 7 minutes before the pinned clock (10:53Z vs 11:00Z), over a
+# 119K prefix at Sonnet's write/read prices -> "(-7m > 5m⇒+=$0.29)", red.
+mkdir -p "$SB/home/.copilot/session-state/shot"
+printf '%s\n' '{"type":"session.usage_record","data":{"usage":{"model":"claude-sonnet-5","cacheReadTokens":118000,"cacheWriteTokens":1000,"cacheExpiresAt":"2026-09-16T10:58:00.000Z","cacheTtlSeconds":300,"accounting":{"sourceSessionId":"shot"},"copilotUsage":{"tokenDetails":[{"batchSize":1000000,"costPerBatch":200000000000,"tokenType":"input"},{"batchSize":1000000,"costPerBatch":10000000000,"tokenType":"cache_read"},{"batchSize":1000000,"costPerBatch":250000000000,"tokenType":"cache_write"}]}}}}' \
+  > "$SB/home/.copilot/session-state/shot/events.jsonl"
 copilot_payload() {
   printf '{"session_id":"shot","display_name":"claude-sonnet-5 · medium · 264K context","current_context_tokens":119000,"displayed_context_limit":264000,"ai_used":{"total_nano_aiu":%s},"cost":{"total_duration_ms":5400000}}' "$1"
 }

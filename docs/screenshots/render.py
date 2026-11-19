@@ -343,7 +343,7 @@ SPECS = [
              "context tokens used / window size, sharing one <code>K</code> because "
              "printing it on both sides said it twice. The used count goes yellow ≥65% "
              "and red ≥95%; the percentage is hidden when the window is a full 1M."),
-            (r"\$[\d.]+ (?=∈)", "spend",
+            (r"\$[\d.]+(?= \(-)", "spend",
              "what the <b>last turn</b> cost, hung off the session total by an "
              "<code>∈</code> because it is one of the turns inside it. Nothing in the "
              "payload marks a turn "
@@ -352,6 +352,13 @@ SPECS = [
              "before the prompt — to this turn's baseline. It freezes when the turn "
              "ends, which is the point: come back to a session you left working and the "
              "bar tells you what the prompt you walked away from actually burned."),
+            (r"\(-\d+m > \dm⇒\+=\$[\d.]+\)", "spend",
+             "the <b>prompt-cache clock</b>, as on the Claude bar: idle for 7 minutes, past "
+             "the 5-minute TTL Copilot gives every Claude model (30 for GPT), so the "
+             "next message rewrites the whole cached prefix at the cache-write price. "
+             "TTL, prefix and both prices come from the last usage record Copilot "
+             "logged for this session — the bill, not a pricing table. Orange in the "
+             "last 20% before the TTL, a bare <code>-2m</code> before that."),
             (r"∈ Session: \$[\d.]+", "spend",
              "what <b>this</b> session has burned, worded like the footer Copilot "
              "prints three lines below (<code>Session: 41.60 AIC used</code>) so the two "

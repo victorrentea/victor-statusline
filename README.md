@@ -12,7 +12,7 @@ which is the part worth stealing.
 
 ```
 Fable 5.1xh 50K ↗88% / 3h19 ✻0.5 ⊂ $25 victor-statusline@fix-cache +19=70% (F22%) / 2wd13h
-🤖 sonnet-5m 119/264K 45% | $0.09 ∈ Session: $0.42 | 74%↑ ($7.5/$10) left today | +17%⊂34% $68 (6759 AIC) / 7wd13h left
+🤖 sonnet-5m 119/264K 45% | $0.09 (-7m > 5m⇒+=$0.29) ∈ Session: $0.42 | 74%↑ ($7.5/$10) left today | +17%⊂34% $68 (6759 AIC) / 7wd13h left
 ```
 
 ## What the bar actually says
