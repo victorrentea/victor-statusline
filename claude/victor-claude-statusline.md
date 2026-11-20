@@ -1563,7 +1563,7 @@ Sticking to dark backgrounds, as the first version did, capped the palette at
 about a dozen hues that were both legible and still distinguishable from each
 other — and twelve buckets over ~20 active folders collided constantly
 (measured on the real folder list: 10 collisions at 12 hues; `walkie-talkie` and
-`victor-macos-addons`, the pair most often open side by side, landed on the same
+`victor-mac`, the pair most often open side by side, landed on the same
 orange). Opening up the pale half roughly doubles the range, and the light/dark
 split is the fastest thing the eye sorts on — it lands before any hue has been
 resolved. It also keeps the chip from sinking into the window: these sessions run
