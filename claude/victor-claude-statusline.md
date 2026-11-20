@@ -2183,7 +2183,7 @@ TEAL="${ESC}[38;5;80m"
 GREY="${ESC}[38;5;244m"
 
 # --- Light page -------------------------------------------------------------
-# The Claude theme is `custom:follow-macos`, whose `base` Victor Addons flips
+# The Claude theme is `custom:follow-macos`, whose `base` Victor Mac flips
 # with the macOS appearance, and session-color.sh repaints the Claude tabs with
 # it: #2e3440 polar night in dark mode, #eceff4 snow storm in light mode. Every
 # colour above was tuned on the dark tint — 111/78/80 are pale enough to vanish
