@@ -581,6 +581,31 @@ out=$(printf '%s' "$payload" | sh "$SCRIPT")
 assert_not_contains "week spend: no complete day yet prints nothing" "$out" '/0d'
 rm -f "$HOME/.claude/week-spend"
 
+# --- Case: a recap restarts the prompt-cache clock ---------------------------
+# Real session, 2026-11-20: turn ended, Claude Code wrote its away_summary recap
+# 8 minutes later, the next prompt came 65 minutes after the turn and still read
+# the whole 267K prefix back. The recap request re-read the cache and restarted
+# its 1h TTL, so the clock has to count from the recap, not from the turn.
+iso_ago() { _e=$(( $(date +%s) - $1 )); date -u -r "$_e" +%Y-%m-%dT%H:%M:%S.000Z 2>/dev/null || date -u -d "@$_e" +%Y-%m-%dT%H:%M:%S.000Z; }
+session="statusline-test-recap"
+{
+  prompt_line u0 09:00
+  printf '{"type":"assistant","uuid":"a-r0","requestId":"r0","timestamp":"%s","message":{"role":"assistant","stop_reason":"end_turn","content":[],"usage":{"input_tokens":2,"cache_read_input_tokens":250000,"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_1h_input_tokens":1000,"ephemeral_5m_input_tokens":0},"output_tokens":300}}}\n' "$(iso_ago 3900)"
+  printf '{"type":"system","subtype":"away_summary","uuid":"s-1","timestamp":"%s","content":"recap"}\n' "$(iso_ago 600)"
+} > "$proj/$session.jsonl"
+out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 2.000 2.000 251002)
+assert_contains     "recap: the clock counts from the recap" "$out" '-10m'
+assert_not_contains "recap: no miss forecast while the recap keeps it warm" "$out" '⇒+='
+assert_not_contains "recap: not past the TTL" "$out" '>1h'
+# The same transcript without the recap: 65m on a 1h TTL is a miss.
+session="statusline-test-norecap"
+{
+  prompt_line u0 09:00
+  printf '{"type":"assistant","uuid":"a-r0","requestId":"r0","timestamp":"%s","message":{"role":"assistant","stop_reason":"end_turn","content":[],"usage":{"input_tokens":2,"cache_read_input_tokens":250000,"cache_creation_input_tokens":1000,"cache_creation":{"ephemeral_1h_input_tokens":1000,"ephemeral_5m_input_tokens":0},"output_tokens":300}}}\n' "$(iso_ago 3900)"
+} > "$proj/$session.jsonl"
+out=$(render_twice "$session" "claude-opus-5-5[1m]" "Opus 5.5 (1M context)" 2.000 2.000 251002)
+assert_contains     "no recap: 65m past a 1h TTL is priced" "$out" '⇒+=$'
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

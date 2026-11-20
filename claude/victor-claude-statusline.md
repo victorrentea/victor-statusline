@@ -1071,7 +1071,7 @@ the 5 m bucket and wins on its own.
 That number then drives the **`-N` clock** (the price is always stated; the
 blink only above **$2** — see §1.1):
 
-| Age since the last turn | Rendering | Meaning |
+| Age since the cache was last touched | Rendering | Meaning |
 |-------------------------|-----------|---------|
 | `< 0.8 × TTL` | plain, `-12m` | prefix is warm — no price, nothing at stake |
 | `0.8 × TTL … TTL` | orange, `(-48m <= 1h⇒+=$2.1)` | last chance — send now and you still pay 0.1× |
@@ -1080,6 +1080,17 @@ blink only above **$2** — see §1.1):
 
 The colour **blinks** on/off in the bottom three rows only when the price clears
 $2; below that the same text is rendered once, in the terminal's normal colour.
+
+**The clock starts at the last request that read the cache, not at the end of the
+turn.** A few minutes after a turn ends, Claude Code writes a **recap**
+(`system` / `away_summary` in the transcript): it sends the whole conversation
+and asks for a summary. That request reads the cached prefix, which restarts its
+TTL. So the clock restarts at the recap. It used to count from the end of the
+turn, and on 2026-11-20 that was wrong by eight minutes: the turn ended 07:32,
+the recap ran 07:40, the next prompt came 08:38. The bar showed `>1h` and
+forecast a $2 rebuild, but the prompt read all 267K tokens back and the turn
+cost 8 cents. It even read back 754 tokens *more* than the last main request
+had sent: the reply that the recap had added to the cache.
 
 **The clock states its own verdict.** `-51m` is a number with no conclusion
 attached — the reader has to remember what the TTL is and do the comparison. So
@@ -1764,6 +1775,8 @@ priority order:
   right after you hit Enter — until this turn's first cost lands.
 2. **Transcript fallback:** `stop_reason != "tool_use"` + no trailing user
   message ⇒ idle; age from the last assistant `timestamp`.
+  In both 1 and 2, a later `away_summary` (the recap) restarts the age: it
+  re-read the cached prefix, so the TTL counts from there.
 3. **Cost-clock heuristic:** for Claude Code 2.1.x sessions whose `<id>.jsonl`
   path doesn't exist, turn state is inferred purely from the **cost clock** —
   cost rises while working, flat between turns. Flat ≥ `IDLE_GRACE` (3s) ⇒ idle;
@@ -2893,7 +2906,16 @@ def isprompt: (.type=="user") and (.isSidechain!=true) and (.isMeta!=true)
 | (($ccs | map(.h + .m) | max) // 0) as $ccmax
 | ([ $ccs[] | select((.h + .m) * 4 >= $ccmax) ] | last) as $cc
 | (if $cc == null then 0 elif ($cc.h > $cc.m) then 3600 else 300 end) as $ttl
-| "\($total)\t\($turn)\t\($lu_uuid)\t\($last_ts // "")\t\(if $idle then 1 else 0 end)\t\($cr)\t\($prev)\t\($ttl)\t\($fcc)\t\($fc1h)\t\($fc5m)\t\($fp)\t\($keep)"'
+# The last RECAP (system/away_summary): a few minutes after a turn ends, Claude
+# Code asks the model to summarise the session for when you come back. That
+# request carries the whole conversation, so it READS the cached prefix and
+# extends it with the last reply, and a read restarts the TTL. Measured
+# 2026-11-20: turn ended 07:32:35, recap 07:40:57, next prompt 08:38:14 -- 65m
+# after the turn, yet it read back 267,377 tokens, 754 MORE than the last main
+# request had sent (the reply the recap had appended). The bar had forecast a
+# $2 miss; the turn cost 8 cents. Only one past the last assistant counts.
+| ([ $all[] | select(.type=="system" and .subtype=="away_summary" and (.isSidechain != true)) | .timestamp // empty ] | last) as $recap_ts
+| "\($total)\t\($turn)\t\($lu_uuid)\t\($last_ts // "")\t\(if $idle then 1 else 0 end)\t\($cr)\t\($prev)\t\($ttl)\t\($fcc)\t\($fc1h)\t\($fc5m)\t\($fp)\t\($keep)\t\(if ($recap_ts // "") > ($last_ts // "") then $recap_ts else "" end)"'
   sid=$(basename "$tp" .jsonl)
   # The jq -s above slurps the ENTIRE transcript (often multi-MB) — far too
   # costly to re-run on every 1s idle refresh. Cache its single-line output and
@@ -2904,7 +2926,8 @@ def isprompt: (.type=="user") and (.isSidechain!=true) and (.isMeta!=true)
   # its 5m/1h split, its prompt size, the cold-start read). The cache is keyed by
   # mtime alone, so an older line would be served as valid until the transcript
   # next changes; the version in the name retires it.
-  cache="/tmp/claude-statusline-cache-v3-${sid}.txt"
+  # -v4: field 14, the recap timestamp.
+  cache="/tmp/claude-statusline-cache-v4-${sid}.txt"
   mtime=$(file_mtime "$tp")
   cached_mtime=""; tok_line=""
   if [ -f "$cache" ]; then
@@ -2928,6 +2951,7 @@ def isprompt: (.type=="user") and (.isSidechain!=true) and (.isMeta!=true)
   first_w5m=$(printf '%s' "$tok_line" | cut -f11)
   first_prompt=$(printf '%s' "$tok_line" | cut -f12)
   keep_tokens=$(printf '%s' "$tok_line" | cut -f13)
+  recap_ts=$(printf '%s' "$tok_line" | cut -f14)
   [ -n "$total_tok" ] || total_tok=0
   [ -n "$turn_tok" ] || turn_tok=0
 
@@ -3118,6 +3142,18 @@ if [ -n "$spend_ready" ]; then
       # after you hit Enter — until this turn's first cost actually lands.
       working) idle=0 ;;
       idle)    idle=1; case "$hts" in ''|*[!0-9]*) ;; *) age_secs=$((now - hts)); [ "$age_secs" -lt 0 ] && age_secs=0 ;; esac ;;
+    esac
+  fi
+  # The clock is a CACHE clock (it is compared to the TTL and priced as a miss),
+  # so it counts from the last request that touched the prefix, not from the end
+  # of the turn. A recap after the turn is such a request: it re-reads the prefix
+  # and restarts the TTL, so the clock restarts with it. Without this the bar
+  # went red at 60m and forecast a $2 rebuild that never came (see $recap_ts).
+  if [ "$idle" = 1 ] && [ -n "${recap_ts:-}" ]; then
+    _r=${recap_ts%%.*}; _r=$(utc_epoch "${_r%Z}")
+    case "$_r" in ''|*[!0-9]*) ;; *)
+      _ra=$((now - _r)); [ "$_ra" -lt 0 ] && _ra=0
+      { [ -z "$age_secs" ] || [ "$_ra" -lt "$age_secs" ]; } && age_secs=$_ra ;;
     esac
   fi
   # Displayed cost + label. Three states, driven by "am I working" AND by whether
