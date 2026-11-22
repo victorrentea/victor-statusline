@@ -1369,7 +1369,7 @@ if [ -n "$spend_ready" ]; then
 fi
 
 if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
-  out="$out${_five_sep:- | }$spend_seg"
+  out="$out${_five_sep:- · }$spend_seg"
 fi
 
 # --- Weekly quota, last cell of the bar: "+6=27% / 1wd1h"
@@ -1807,9 +1807,9 @@ fi
 # --- Weekly quota, last cell (built above, next to its arithmetic) ----------
 # Its leading separator is the folder's trailing one: a space when the chip is
 # there to divide them, the usual pipe when there is no folder segment at all.
-[ -n "$week_seg" ] && out="$out${_loc_sep:- | }$week_seg"
+[ -n "$week_seg" ] && out="$out${_loc_sep:- · }$week_seg"
 
-# --- Spend at API prices, the very last cell: "$71 today · $1840/6.4d" -------
+# --- Spend at API prices, the very last cell: "$71 today ⊂ $1840/6.4d" -------
 # The weekly cell says how much of the ALLOWANCE is gone, never what it is worth.
 # This is usage priced as if every token had gone through an API key, in two
 # figures: TODAY (local midnight -> now) and the WHOLE WINDOW (start of the
@@ -1830,8 +1830,11 @@ fi
 # Monday -- the day "how much have I burned since the reset" was most worth
 # asking (9 Nov 2026).
 #
-# A bare space in front, no pipe: the "$" already marks where the cell starts,
-# and "/ 3wd11h $71 today" cannot be misread as one figure.
+# A "·" in front, like every other unpainted join: "/ 3wd11h · $71 today". It
+# used to be a bare space, on the argument that the "$" marks where the cell
+# starts -- but that left the bar with three different dividers (|, space, ·)
+# for the eye to learn (22 Nov 2026). Inside the cell, "⊂", the same sign as the
+# session spend: today's dollars ARE part of the window's total.
 if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
   _ws_file="${CLAUDE_WEEK_SPEND_FILE:-$HOME/.claude/week-spend}"
   _ws_start0=$((week_reset - 604800))
@@ -1860,9 +1863,9 @@ if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
       else
         _ws_span="$(awk -v s="$_ws_span" 'BEGIN{printf "%.1fd", s/86400}')"
       fi
-      _ws_cell="$_ws_cell · \$$(awk -v a="$_ws_closed" -v b="$_wt_usd" 'BEGIN{printf "%.0f", a+b}')/$_ws_span"
+      _ws_cell="$_ws_cell ⊂ \$$(awk -v a="$_ws_closed" -v b="$_wt_usd" 'BEGIN{printf "%.0f", a+b}')/$_ws_span"
     fi
-    out="$out $_ws_cell"
+    out="$out · $_ws_cell"
   fi
   unset _ws_file _ws_key _ws_start _ws_start0 _ws_date _ws_usd _ws_days _ws_closed _ws_now \
         _wt_start _wt_date _wt_usd _wt_at _ws_cell _ws_span

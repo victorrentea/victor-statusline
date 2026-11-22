@@ -139,7 +139,7 @@ SPECS = [
              "burning it faster than it drains. The whole cell sits on a <b>chip</b> — a "
              "dark blue-grey block matched to the window — and it is the <b>chip's "
              "ground</b> that warns: dark amber under 15%, dark maroon under 5%. That is "
-             "also why the cell has no <code>|</code> around it."),
+             "also why the cell has no <code>·</code> around it."),
             (r"\d+h\d+(?= )", "5h",
              "time until the 5-hour window resets. A duration (<code>3h19</code>), never "
              "a clock time — the segment already contains a wall clock when parked, and "
@@ -168,7 +168,7 @@ SPECS = [
             # so late on a Friday it is a bare "13h". Anchored to the week's
             # spend that follows it because a bare \d+h would otherwise match
             # inside "3h19".
-            (r"(?:\d+wd)?\d+h(?= \$)", "week",
+            (r"(?:\d+wd)?\d+h(?= · \$)", "week",
              "<b>working</b> time until the weekly window resets: <code>wd</code> is "
              "weekdays, with Saturday and Sunday subtracted, because a weekend burns no "
              "quota and flattered the number every Monday. Units it does not need are "
@@ -192,7 +192,7 @@ SPECS = [
                  "exists, and its own schema says plan limits do not apply to an API "
                  "key — so both quota segments are not drawn.",
         note="Nothing is greyed out or zeroed: fields 3–4 and 9–13 of the subscription "
-             "bar above are <b>absent</b>, and the <code>|</code> separators with them. "
+             "bar above are <b>absent</b>, and the <code>·</code> separators with them. "
              "The 2.1.263 binary is explicit about why — the payload is built as "
              "<code>…(five_hour || seven_day || spend_limit) &amp;&amp; {rate_limits}</code>, "
              "over a field documented as <i>“False when plan rate limits do not apply "

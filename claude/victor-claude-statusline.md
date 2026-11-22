@@ -35,34 +35,34 @@ blooms `·` → `✢` → `✳` → `✻` → `✽` and closes again, one frame 
 same spinner Claude Code draws in front of "Working…"):
 
 ```
-Opus 5xh 50K ↗98% / 4h47 ✻0.5 ⊂ $25 ai | +24=70% / 1d1h
+Opus 5xh 50K ↗98% / 4h47 ✻0.5 ⊂ $25 ai · +24=70% / 1d1h
 ```
 
 Idle, waiting on you (note the ticking "-N" clock and no flower):
 
 ```
-Opus 5xh 50K 98% / 4h47 $0.1 -3m ⊂ $25 ai | +24=70% / 1d1h
+Opus 5xh 50K 98% / 4h47 $0.1 -3m ⊂ $25 ai · +24=70% / 1d1h
 ```
 
 Just after you hit Enter, before the first response has billed anything — **no
 turn price at all**, only four stars holding its place:
 
 ```
-Opus 5xh 50K | 98% / 4h47 | ★★★★ ⊂ $25 | ai | +24=70% / 1d1h
+Opus 5xh 50K · 98% / 4h47 · ★★★★ ⊂ $25 · ai · +24=70% / 1d1h
 ```
 
 Idle long enough that the prompt cache is gone. The loss is priced either way;
 what changes with the amount is whether it moves. Below $2 it just sits there:
 
 ```
-Opus 5h 170K | ↑87% / 1h41 | $7.8 (>1h⇒+=$1.6) ⊂ $10 | ai | +15=82% / 3wd8h
+Opus 5h 170K · ↑87% / 1h41 · $7.8 (>1h⇒+=$1.6) ⊂ $10 · ai · +15=82% / 3wd8h
 ```
 
 Above $2, `220K`, `>1h` and `$2.1` turn **steady red** together (§1.1); they
 used to blink, and stopped on 7 Oct 2026 — the colour alone is the alarm:
 
 ```
-Opus 5h 220K | ↑87% / 1h42 | $1.5 (>1h⇒+=$2.1) ⊂ $23 | ai | +15=82% / 3wd8h
+Opus 5h 220K · ↑87% / 1h42 · $1.5 (>1h⇒+=$2.1) ⊂ $23 · ai · +15=82% / 3wd8h
 ```
 
 Five-hour quota nearly exhausted and confirmed by the account: `quota-gate.sh`
@@ -70,7 +70,7 @@ has parked this terminal. The arrow is the next live check; the duration is
 time until the window resets:
 
 ```
-Opus 5h 3%💤 → 21:15 / 4h51 | ai | +15=82% / 3wd8h
+Opus 5h 3%💤 → 21:15 / 4h51 · ai · +15=82% / 3wd8h
 ```
 
 The same gate also parks at **1% or less weekly quota** — the account-wide
@@ -85,7 +85,7 @@ Opus 5h 60% / 3h22 ai -6=0%💤 → Fri 17:08 / 7h
 Five segments: **model/effort/context**, **5h quota + burn-rate**, **spend**,
 **location**, **7-day quota**. Two of them — the 5h quota and the location — sit
 on a **colour chip**, a painted background block, and a chip is its own
-separator: those cells have no `|` around them, only a space. The result is a
+separator: those cells have no `·` around them, only a space. The result is a
 **zebra**, plain / chipped / plain / chipped / plain, which the eye sorts before
 it has resolved a single glyph. There is **no leading emoji** on the model
 segment.
@@ -96,12 +96,15 @@ window and the spend move within a single turn; the folder changes when you
 as soon as you have what you came for — and the most static segment is the one
 that falls off the right edge first on a narrow terminal.
 
-**`|` separates *unpainted* segments; `/` joins readings of the *same* window**
-— the 5h pair `↗98% / 4h47`, and the weekly triple `+24=70% / 1d1h` (pace, then
-what's left, then how long the window has to run). It also buys back a couple of
-columns per join versus a wordier separator. The pipe is there because two runs
-of plain text a space apart read as one run; where a segment is painted, it has
-nothing left to do — which is why neither chipped cell carries one (§2, §5).
+**`·` separates *unpainted* segments; `/` joins readings of the *same* window;
+`⊂` says one figure is part of the next** — the 5h pair `↗98% / 4h47`, the
+weekly triple `+24=70% / 1d1h` (pace, then what's left, then how long the window
+has to run), and `$0.5 ⊂ $25` / `$312 today ⊂ $2152`. The `·` is there because
+two runs of plain text a space apart read as one run; where a segment is
+painted, it has nothing left to do — which is why neither chipped cell carries
+one (§2, §5). It used to be a `|` here and a bare space or a `·` elsewhere;
+three dividers meaning the same thing was two too many (22 Nov 2026), and the
+dot is the lightest of them.
 
 ---
 
@@ -267,8 +270,8 @@ would cost more than **$2** (`CLAUDE_MISS_FLOOR` to change it). So a cheap miss
 sits there in plain text and a dear one starts moving:
 
 ```
-… | $7.8 (>1h⇒+=$1.4) ⊂ $10 | …    ← states the loss, stays still
-… | $7.8 (>1h⇒+=$2.1) ⊂ $10 | …    ← ">1h" and "$2.1" turn red
+… · $7.8 (>1h⇒+=$1.4) ⊂ $10 · …    ← states the loss, stays still
+… · $7.8 (>1h⇒+=$2.1) ⊂ $10 · …    ← ">1h" and "$2.1" turn red
 ```
 
 The alarm threshold used to be a flat 100K tokens, which is the wrong unit: what
@@ -324,7 +327,7 @@ parameter expansion, not `sed`: `$ctx_render` is full of ESC and `&` bytes that
 Glued onto the model segment while subagents are running, and absent otherwise:
 
 ```
-Opus 5h 60K +2×O5h +S5m | ↓48% / 4h44 | $0.3 -2m ⊂ $1.1 | victor-statusline | -1=-1% / 0m
+Opus 5h 60K +2×O5h +S5m · ↓48% / 4h44 · $0.3 -2m ⊂ $1.1 · victor-statusline · -1=-1% / 0m
 ```
 
 Two Opus-5 agents at high effort plus one Sonnet-5 at medium. Each group is
@@ -523,9 +526,9 @@ never be fresh either. Freshness is now keyed on either window.
 ### The cell sits on a chip, and the chip is what warns
 
 The whole cell is painted on a **colour chip** — the second one in the bar,
-alongside the folder's (§5) — and so it carries **no `|` on either side**; a
+alongside the folder's (§5) — and so it carries **no `·` on either side**; a
 space and the chip's own edge do the separating. That is what makes the bar a
-zebra rather than a pipe-fence.
+zebra rather than a fence of dividers.
 
 The ground is **dark, in the window's own blue-grey family** (`60`, `#5f5f87`,
 one step up from Nord polar night `#2e3440`), with the text left **light** on
@@ -557,7 +560,7 @@ readings at once. It could — and it was still dead weight. Neither figure has
 ever meant anything else here: a percentage that only counts down and a duration
 that only counts down are both self-evidently remainders, and the word never
 once resolved a real ambiguity. What it did do was cost five columns and wedge a
-word between the segment and the next `|`, on the segment that changes fastest
+word between the segment and the next divider, on the segment that changes fastest
 and gets read most. Dropped in both shapes — with a countdown (`98% / 4h47`) and
 without it (`98%`). `/` is now the only separator left inside the cell; where the
 cell itself ends is said by the chip's edge.
@@ -906,7 +909,7 @@ just-hit-Enter window deliberately shows nothing instead.
 ## 3.1 Prompt-cache miss — the red `(2.7⏱)` on the turn price
 
 ```
-Opus 5xh 200K | 98% / 4h47 | $5.2(2.7⏱) ⊂ $34 | ai | +24=70% / 1d1h
+Opus 5xh 200K · 98% / 4h47 · $5.2(2.7⏱) ⊂ $34 · ai · +24=70% / 1d1h
 ```
 
 A red `(2.7⏱)` glued to the turn price means **this turn did not reuse the cached
@@ -1424,7 +1427,7 @@ is now only about five minutes.
 
 ---
 
-## 4.1 Spend at API prices — `$312 today · $2152/4.6d`
+## 4.1 Spend at API prices — `$312 today ⊂ $2152/4.6d`
 
 The **very last** cell: what usage would have cost **if every token had been
 paid for with an API key** — today so far, and the whole weekly window so far.
@@ -1479,12 +1482,18 @@ prefix of `opus-5-5`): base input, output at 5×, cache writes at 1.25× (5m) or
 multiplier (0.05× Opus 5.5, 0.025× Fable 5.1, 0.1× the rest), plus $10 per
 thousand web searches. `<synthetic>` messages cost nothing and are skipped.
 
-### No `|` in front
+### `·` in front, `⊂` inside
 
-The cell follows the weekly reading with a bare space: `/ 3wd11h $312 today`. The
-`$` already says where a new figure starts, and a pipe would have spent two
-columns separating two things nobody could read as one. The two figures inside
-the cell are split by a `·`, the lightest divider that still keeps them apart.
+The cell follows the weekly reading with the bar's one divider: `/ 3wd11h · $312
+today`. It used to be a bare space, on the argument that the `$` already marks
+where a new figure starts — but the day and the weekly duration then sat closer
+together than any other two cells, and the bar spoke three dividers (`|`, space,
+`·`) for one idea. Since 22 Nov 2026 every unpainted join is a `·`.
+
+The two figures inside the cell are joined by `⊂`, not a neutral dot: they are
+not siblings. Today's dollars are *part of* the window's total — the same
+relation as the turn inside the session (`$0.5 ⊂ $25`, §4), and the same sign
+for it.
 
 ---
 
@@ -1498,14 +1507,14 @@ renders in the bar's default foreground, like every other figure on the line.
 The chip is the one painted thing in this segment; a coloured tail hanging off
 it read as a second highlight competing with the folder name.
 
-**No `|` on either side of it.** The pipe earns its place between plain-text
+**No `·` on either side of it.** The divider earns its place between plain-text
 cells, which would otherwise run together; a chipped cell is never plain text —
-the chip's own edges are a harder boundary than a pipe ever was. Carrying both
-made the eye cross four separators (pipe, chip edge, chip edge, pipe) to read
+the chip's own edges are a harder boundary than a divider ever was. Carrying both
+made the eye cross four separators (divider, chip edge, chip edge, divider) to read
 one word. A single space on each side is all the air the chip needs, so the
-segment now reads `⊂ $3.0 victor-skills -16=25%`. The pipe returns only when
+segment now reads `⊂ $3.0 victor-skills -16=25%`. The `·` returns only when
 there is no location at all, since then the neighbours really are two runs of
-plain text. This was the first cell to drop its pipes on that argument; the 5h
+plain text. This was the first cell to drop its dividers (then pipes) on that argument; the 5h
 quota (§2) followed, and the two of them together are the bar's zebra.
 
 | cwd | Segment |
@@ -3303,7 +3312,7 @@ if [ -n "$spend_ready" ]; then
 fi
 
 if [ -n "$spend_seg" ] && [ "$(printf '%.2f' "$cost")" != "0.00" ]; then
-  out="$out${_five_sep:- | }$spend_seg"
+  out="$out${_five_sep:- · }$spend_seg"
 fi
 
 # --- Weekly quota, last cell of the bar: "+6=27% / 1wd1h"
@@ -3741,9 +3750,9 @@ fi
 # --- Weekly quota, last cell (built above, next to its arithmetic) ----------
 # Its leading separator is the folder's trailing one: a space when the chip is
 # there to divide them, the usual pipe when there is no folder segment at all.
-[ -n "$week_seg" ] && out="$out${_loc_sep:- | }$week_seg"
+[ -n "$week_seg" ] && out="$out${_loc_sep:- · }$week_seg"
 
-# --- Spend at API prices, the very last cell: "$71 today · $1840/6.4d" -------
+# --- Spend at API prices, the very last cell: "$71 today ⊂ $1840/6.4d" -------
 # The weekly cell says how much of the ALLOWANCE is gone, never what it is worth.
 # This is usage priced as if every token had gone through an API key, in two
 # figures: TODAY (local midnight -> now) and the WHOLE WINDOW (start of the
@@ -3764,8 +3773,11 @@ fi
 # Monday -- the day "how much have I burned since the reset" was most worth
 # asking (9 Nov 2026).
 #
-# A bare space in front, no pipe: the "$" already marks where the cell starts,
-# and "/ 3wd11h $71 today" cannot be misread as one figure.
+# A "·" in front, like every other unpainted join: "/ 3wd11h · $71 today". It
+# used to be a bare space, on the argument that the "$" marks where the cell
+# starts -- but that left the bar with three different dividers (|, space, ·)
+# for the eye to learn (22 Nov 2026). Inside the cell, "⊂", the same sign as the
+# session spend: today's dollars ARE part of the window's total.
 if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
   _ws_file="${CLAUDE_WEEK_SPEND_FILE:-$HOME/.claude/week-spend}"
   _ws_start0=$((week_reset - 604800))
@@ -3794,9 +3806,9 @@ if [ -n "$week_reset" ] && [ "$week_reset" -gt 604800 ] 2>/dev/null; then
       else
         _ws_span="$(awk -v s="$_ws_span" 'BEGIN{printf "%.1fd", s/86400}')"
       fi
-      _ws_cell="$_ws_cell · \$$(awk -v a="$_ws_closed" -v b="$_wt_usd" 'BEGIN{printf "%.0f", a+b}')/$_ws_span"
+      _ws_cell="$_ws_cell ⊂ \$$(awk -v a="$_ws_closed" -v b="$_wt_usd" 'BEGIN{printf "%.0f", a+b}')/$_ws_span"
     fi
-    out="$out $_ws_cell"
+    out="$out · $_ws_cell"
   fi
   unset _ws_file _ws_key _ws_start _ws_start0 _ws_date _ws_usd _ws_days _ws_closed _ws_now \
         _wt_start _wt_date _wt_usd _wt_at _ws_cell _ws_span
