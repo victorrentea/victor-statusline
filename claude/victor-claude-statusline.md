@@ -123,9 +123,9 @@ one-line file and no fork, on a bar that re-renders every few seconds.
 Bare, not on a badge like the mic below: it is a standing mode, not a target the
 eye has to find in a hurry, and it sits at column 0 where nothing competes with it.
 
-## 0. The kamikaze badge — `☠️ kamikaze`
+## 0. The kamikaze badge — `☠️`
 
-White on red, in front of the model name, present only when this session has
+A ☠️ alone on a red badge (no word beside it), in front of the model name, present only when this session has
 been told to **close its own Terminal window once the task lands** (the
 `close-terminal` skill, triggered by "kamikaze").
 
@@ -2389,7 +2389,7 @@ _ps=""
 case "$_ps" in *'"bridgeSessionId"'*) rc="📡 " ;; esac
 unset _ps
 
-# ☠️ kamikaze = this session was told to close its own Terminal window when the
+# ☠️ (on red) = this session was told to close its own Terminal window when the
 # task lands (the close-terminal skill). Worth a badge because the window is
 # about to vanish with its scrollback: whoever glances at the row should know
 # not to leave anything in it they still want to read. The marker is the log
@@ -2401,7 +2401,7 @@ kamikaze=""
 _sk="/tmp/claude-skills-${session_id:-none}.txt"
 if [ -n "$session_id" ] && [ -r "$_sk" ]; then
   while IFS= read -r _l || [ -n "$_l" ]; do
-    case "$_l" in *close-terminal) kamikaze="${ESC}[1;97;48;5;196m ☠️ kamikaze ${RESET} "; break ;; esac
+    case "$_l" in *close-terminal) kamikaze="${ESC}[1;97;48;5;196m ☠️ ${RESET} "; break ;; esac
   done < "$_sk"
 fi
 unset _sk _l
