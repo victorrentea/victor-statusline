@@ -123,6 +123,22 @@ one-line file and no fork, on a bar that re-renders every few seconds.
 Bare, not on a badge like the mic below: it is a standing mode, not a target the
 eye has to find in a hurry, and it sits at column 0 where nothing competes with it.
 
+## 0. The kamikaze badge — `☠️ kamikaze`
+
+White on red, in front of the model name, present only when this session has
+been told to **close its own Terminal window once the task lands** (the
+`close-terminal` skill, triggered by "kamikaze").
+
+The window is about to vanish with its scrollback, so the row has to warn
+whoever glances at it not to leave anything there they still want to read. The
+same ☠️ marks that session in Walkie Talkie's session menu.
+
+**No new marker.** A PostToolUse hook on the `Skill` tool already appends every
+loaded skill's name to `/tmp/claude-skills-<session_id>.txt`; the badge is a
+line ending in `close-terminal` in that file. It appears the moment the skill
+loads, and it is read with a builtin `read` loop, not `grep`, so it costs no
+fork on a bar that re-renders every second.
+
 ## 0. The bound-session microphone — `🎙️`
 
 A white-on-red badge in front of the model name, present only when **Walkie
@@ -2373,7 +2389,24 @@ _ps=""
 case "$_ps" in *'"bridgeSessionId"'*) rc="📡 " ;; esac
 unset _ps
 
-out="${rc}${mic}${model}@@SUB@@"
+# ☠️ kamikaze = this session was told to close its own Terminal window when the
+# task lands (the close-terminal skill). Worth a badge because the window is
+# about to vanish with its scrollback: whoever glances at the row should know
+# not to leave anything in it they still want to read. The marker is the log
+# the PostToolUse `Skill` hook in settings.json already keeps,
+# /tmp/claude-skills-<session>.txt, one skill name per line — so nothing new
+# has to be written anywhere, and the badge appears the moment the skill loads.
+# A builtin `read` loop, not grep: no fork on a bar that re-renders every second.
+kamikaze=""
+_sk="/tmp/claude-skills-${session_id:-none}.txt"
+if [ -n "$session_id" ] && [ -r "$_sk" ]; then
+  while IFS= read -r _l || [ -n "$_l" ]; do
+    case "$_l" in *close-terminal) kamikaze="${ESC}[1;97;48;5;196m ☠️ kamikaze ${RESET} "; break ;; esac
+  done < "$_sk"
+fi
+unset _sk _l
+
+out="${rc}${mic}${kamikaze}${model}@@SUB@@"
 
 # quota-gate.sh writes the wake epoch and the window that caused this terminal
 # to park. Old one-field markers predate weekly gating and are therefore 5h.
